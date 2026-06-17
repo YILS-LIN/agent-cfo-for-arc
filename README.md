@@ -36,6 +36,7 @@ Instead of showing raw wallet transactions, Agent CFO turns x402 and nanopayment
 - [Example Report](#example-report)
 - [Architecture](#architecture)
 - [How It Works](#how-it-works)
+- [Lepton Hackathon Fit](#lepton-hackathon-fit)
 - [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
@@ -231,58 +232,110 @@ Arc provides the settlement layer. Agent CFO provides the visibility, interpreta
 5. Budget usage and risk signals are calculated.
 6. A natural language report explains what happened and what can be improved.
 
+## Lepton Hackathon Fit
+
+Agent CFO is built for the Lepton Agents Hackathon hosted by Canteen with Circle and Arc.
+
+It maps most closely to:
+
+- **RFB 01: Autonomous Paying Agents** - a budget and spend intelligence layer for agents that discover and pay for x402-protected resources.
+- **RFB 05: Nanopayment Infrastructure & Tooling** - a dashboard and simulator that makes nanopayment-enabled agents easier to observe and debug.
+
+The current MVP uses a deterministic demo adapter so judges can click through the full product without credentials. The architecture keeps the Arc/Circle integration behind `lib/arc/client.ts`, which is where a production adapter can call:
+
+- ARC CLI for Arc testnet RPC and chain context.
+- Circle CLI / Agent Stack for agent wallets and x402-compatible payments.
+- Gateway/Nanopayments for batched USDC nanopayment telemetry.
+
 ## Tech Stack
 
-The implementation is under active development. This README will be updated with the concrete stack once the MVP code is finalized.
-
-Planned technical areas include:
-
-- Agent payment telemetry
-- x402-style paid service calls
-- Arc USDC payment activity
-- Spend classification
-- Budget and risk analysis
-- Real-time dashboard UI
-- Natural language report generation
+- Next.js App Router
+- React
+- TypeScript
+- Tailwind CSS v4
+- Zustand-ready client architecture
+- Lucide icon system
+- Deterministic mock Arc adapter for offline judging
+- Pure TypeScript analytics modules for spend classification, budget analysis, risk detection, task attribution, and CFO report generation
 
 ## Quick Start
 
-The implementation is under active development. Setup instructions will be added once the MVP code is available.
+Requirements:
 
-Expected local workflow:
+- Node.js 22.17+ recommended
+- pnpm 10.12+
+
+Run locally:
 
 ```bash
-# Install dependencies
-# Run the local development server
-# Open the Agent CFO dashboard
+pnpm install
+pnpm dev
 ```
+
+Open `http://localhost:3000`.
+
+Useful validation commands:
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm build
+```
+
+Demo actions:
+
+- Paste or edit the Agent wallet address.
+- Click **Analyze Wallet** to fetch a spend summary through `/api/agents/[wallet]/summary`.
+- Click **Run Demo Agent** to simulate a research agent generating x402-style payment events.
+- Review the KPI cards, spend flow, recent payments, risk signals, task summary, and AI insight.
+
+Complete workspace pages:
+
+- **Overview**: wallet analysis, KPIs, spend flow, risks, and AI CFO recommendations.
+- **Wallets**: connect wallets, switch the primary wallet, copy addresses, and analyze an account.
+- **Spend**: search and filter the full payment ledger, then export CSV.
+- **Providers**: inspect concentration and approve or block future payments.
+- **Budgets**: edit task limits and configure hard stops and review thresholds.
+- **Risks**: filter by severity and move signals through investigation and resolution.
+- **Tasks**: inspect cost attribution and pause, resume, or restart agent tasks.
+- **Settings**: configure alerts, security, webhooks, retention, and exportable settings.
 
 ## Project Structure
 
-The repository structure will be documented as the implementation is added.
-
-Expected modules:
-
 ```txt
 .
-├── dashboard/        # Agent CFO user interface
-├── agent/            # Demo research agent
-├── services/         # x402-style paid service integrations
-├── analytics/        # Spend classification and risk analysis
+├── app/                  # Next.js routes, API routes, metadata, global styles
+├── components/
+│   ├── dashboard/        # Agent CFO dashboard components
+│   ├── workspace/        # Wallets, Spend, Providers, and governance pages
+│   └── ui/               # Reusable UI primitives
+├── lib/
+│   ├── analytics/        # Spend classification, budget, task, and risk logic
+│   ├── arc/              # Adapter boundary for demo Arc/Circle integration
+│   ├── demo/             # Deterministic hackathon demo payment stream
+│   ├── reports/          # CFO-style report generation
+│   └── utils.ts
+├── types/                # Shared domain types
 └── README.md
 ```
 
 ## Roadmap
 
-- [ ] Agent wallet address input
-- [ ] Real-time payment timeline
-- [ ] Total spend and payment count
-- [ ] Budget usage tracking
-- [ ] Provider and category breakdown
-- [ ] Task-level cost summary
-- [ ] Basic anomaly and inefficiency detection
-- [ ] Natural language spend report
-- [ ] Demo research agent using x402-style paid service calls
+- [x] Agent wallet address input
+- [x] Simulated payment timeline
+- [x] Total spend and payment count
+- [x] Budget usage tracking
+- [x] Provider and category breakdown
+- [x] Task-level cost summary
+- [x] Basic anomaly and inefficiency detection
+- [x] Natural language spend report
+- [x] Demo research agent using x402-style paid service calls
+- [x] Multi-wallet management and primary-wallet switching
+- [x] Full ledger filtering and CSV export
+- [x] Provider approval, task budgets, and payment guardrails
+- [x] Risk investigation workflow and task lifecycle controls
+- [x] Notification, security, webhook, and retention settings
+- [ ] Production Arc/Circle adapter
 - [ ] Exportable CFO report
 - [ ] Multi-agent portfolio view
 

@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f8fb;
+  --foreground: #111318;
+  --muted: #6c7380;
+  --line: #e6e9f0;
+  --card: rgba(255, 255, 255, 0.86);
+  --blue: #3465ff;
+  --blue-soft: #edf2ff;
+  --violet: #7b61ff;
+  --green: #20a464;
+  --orange: #f1902f;
+  --red: #e84d4f;
+  --cyan: #13a6b5;
+  --shadow: 0 20px 60px rgba(32, 43, 72, 0.08);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-card: var(--card);
+  --color-blue: var(--blue);
+  --color-blue-soft: var(--blue-soft);
+  --color-violet: var(--violet);
+  --color-green: var(--green);
+  --color-orange: var(--orange);
+  --color-red: var(--red);
+  --color-cyan: var(--cyan);
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-height: 100%;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    letter-spacing: 0;
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background:
+      radial-gradient(circle at 18% 8%, rgba(68, 99, 255, 0.08), transparent 24rem),
+      radial-gradient(circle at 82% 16%, rgba(23, 166, 181, 0.07), transparent 24rem),
+      var(--background);
+    color: var(--foreground);
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  button,
+  a {
+    transition:
+      color 180ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      transform 180ms ease,
+      box-shadow 180ms ease;
+  }
+}
+
+@layer utilities {
+  .dashboard-card {
+    border: 1px solid var(--line);
+    background: var(--card);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px);
+  }
+
+  .soft-grid {
+    background-image:
+      linear-gradient(rgba(52, 101, 255, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(52, 101, 255, 0.08) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+}
