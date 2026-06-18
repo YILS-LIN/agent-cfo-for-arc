@@ -1,7 +1,30 @@
 {
   "name": "agent-cfo-for-arc",
   "version": "0.1.0",
+  "description": "Real-time spend intelligence for autonomous AI agents on Arc.",
   "private": true,
+  "author": {
+    "name": "YILS",
+    "email": "yils_lin@163.com",
+    "url": "https://yils.blog/"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YILS-LIN/agent-cfo-for-arc.git"
+  },
+  "homepage": "https://github.com/YILS-LIN/agent-cfo-for-arc#readme",
+  "bugs": {
+    "url": "https://github.com/YILS-LIN/agent-cfo-for-arc/issues"
+  },
+  "keywords": [
+    "ai-agent",
+    "arc",
+    "cfo",
+    "spend-intelligence",
+    "usdc",
+    "x402"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -36,7 +59,7 @@
   },
   "packageManager": "pnpm@10.12.4",
   "engines": {
-    "node": ">=20.18.2",
+    "node": ">=22.17.0",
     "pnpm": ">=10.12.4"
   }
 }
