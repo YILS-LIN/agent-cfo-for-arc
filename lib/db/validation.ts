@@ -38,6 +38,14 @@ export const updateTaskStatusInputSchema = z.object({
   status: z.enum(["pending", "running", "paused", "completed", "failed"]),
 });
 
+export const setProviderPolicyInputSchema = z.object({
+  providerKey: z.string().trim().min(1).max(200),
+  displayName: z.string().trim().min(1).max(200),
+  decision: z.enum(["allowed", "review", "blocked"]),
+  expectedVersion: z.number().int().nonnegative(),
+  updatedBy: z.string().uuid(),
+});
+
 export const ingestPaymentInputSchema = z.object({
   walletId: z.string().uuid(),
   taskId: z.string().uuid().optional(),
@@ -76,5 +84,6 @@ export const createBudgetInputSchema = z
 export type CreateWalletInput = z.input<typeof createWalletInputSchema>;
 export type CreateTaskInput = z.input<typeof createTaskInputSchema>;
 export type UpdateTaskStatusInput = z.input<typeof updateTaskStatusInputSchema>;
+export type SetProviderPolicyInput = z.input<typeof setProviderPolicyInputSchema>;
 export type IngestPaymentInput = z.input<typeof ingestPaymentInputSchema>;
 export type CreateBudgetInput = z.input<typeof createBudgetInputSchema>;

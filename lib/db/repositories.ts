@@ -11,6 +11,7 @@ import {
   budgets,
   idempotencyKeys,
   paymentEvents,
+  providerPolicies,
   riskSignals,
   syncCursors,
   tasks,
@@ -24,11 +25,13 @@ import {
   createTaskInputSchema,
   createWalletInputSchema,
   ingestPaymentInputSchema,
+  setProviderPolicyInputSchema,
   updateTaskStatusInputSchema,
   type CreateBudgetInput,
   type CreateTaskInput,
   type CreateWalletInput,
   type IngestPaymentInput,
+  type SetProviderPolicyInput,
   type UpdateTaskStatusInput,
 } from "@/lib/db/validation";
 
@@ -648,6 +651,67 @@ export class SyncRepository {
       .from(syncCursors)
       .where(eq(syncCursors.workspaceId, scope.workspaceId))
       .orderBy(desc(syncCursors.updatedAt));
+  }
+}
+
+export class ProviderPolicyRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async list(scope: WorkspaceScope) {
+    return this.database
+      .select()
+      .from(providerPolicies)
+      .where(eq(providerPolicies.workspaceId, scope.workspaceId))
+      .orderBy(asc(providerPolicies.displayName));
+  }
+
+  async set(scope: WorkspaceScope, rawInput: SetProviderPolicyInput) {
+    const input = setProviderPolicyInputSchema.parse(rawInput);
+    const now = new Date();
+    if (input.expectedVersion === 0) {
+      const [created] = await this.database
+        .insert(providerPolicies)
+        .values({
+          id: randomUUID(),
+          workspaceId: scope.workspaceId,
+          providerKey: input.providerKey,
+          displayName: input.displayName,
+          decision: input.decision,
+          updatedBy: input.updatedBy,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing({
+          target: [providerPolicies.workspaceId, providerPolicies.providerKey],
+        })
+        .returning();
+      if (!created) {
+        throw new OptimisticLockError("Provider policy was created by another request");
+      }
+      return created;
+    }
+
+    const [updated] = await this.database
+      .update(providerPolicies)
+      .set({
+        displayName: input.displayName,
+        decision: input.decision,
+        updatedBy: input.updatedBy,
+        version: sql`${providerPolicies.version} + 1`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(providerPolicies.workspaceId, scope.workspaceId),
+          eq(providerPolicies.providerKey, input.providerKey),
+          eq(providerPolicies.version, input.expectedVersion),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new OptimisticLockError("Provider policy was updated by another request or not found");
+    }
+    return updated;
   }
 }
 

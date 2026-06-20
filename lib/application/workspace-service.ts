@@ -11,6 +11,7 @@ import {
   BudgetRepository,
   IdempotencyRepository,
   PaymentRepository,
+  ProviderPolicyRepository,
   RepositoryNotFoundError,
   RiskRepository,
   TaskRepository,
@@ -59,6 +60,7 @@ export class WorkspaceApplicationService {
   private readonly tasks: TaskRepository;
   private readonly payments: PaymentRepository;
   private readonly risks: RiskRepository;
+  private readonly providerPolicies: ProviderPolicyRepository;
 
   constructor(private readonly database: AppDatabase) {
     this.wallets = new WalletRepository(database);
@@ -68,6 +70,7 @@ export class WorkspaceApplicationService {
     this.tasks = new TaskRepository(database);
     this.payments = new PaymentRepository(database);
     this.risks = new RiskRepository(database);
+    this.providerPolicies = new ProviderPolicyRepository(database);
   }
 
   listWallets(context: AuthContext) {
@@ -150,6 +153,41 @@ export class WorkspaceApplicationService {
     filters: { walletId?: string; from?: Date; to?: Date; limit?: number } = {},
   ) {
     return this.payments.list(context, filters);
+  }
+
+  listProviderPolicies(context: AuthContext) {
+    return this.providerPolicies.list(context);
+  }
+
+  async setProviderPolicy(
+    context: AuthContext,
+    input: {
+      providerKey: string;
+      displayName: string;
+      decision: "allowed" | "review" | "blocked";
+      expectedVersion: number;
+    },
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    return this.database.transaction(async (transaction) => {
+      const policies = new ProviderPolicyRepository(transaction);
+      const audits = new AuditRepository(transaction);
+      const policy = await policies.set(context, { ...input, updatedBy: context.userId });
+      await audits.record(context, {
+        actorUserId: mutationActor(context, source),
+        action: "provider.policy_updated",
+        entityType: "provider_policy",
+        entityId: policy.id,
+        source,
+        payload: {
+          providerKey: policy.providerKey,
+          decision: policy.decision,
+          version: policy.version,
+        },
+      });
+      return policy;
+    });
   }
 
   listRisks(

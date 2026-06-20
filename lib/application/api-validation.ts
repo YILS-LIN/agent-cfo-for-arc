@@ -101,3 +101,9 @@ export const workspaceSummaryQuerySchema = z
     message: "Summary range end must be after its start",
     path: ["rangeEnd"],
   });
+
+export const setProviderPolicyRequestSchema = z.object({
+  displayName: z.string().trim().min(1).max(200),
+  decision: z.enum(["allowed", "review", "blocked"]),
+  expectedVersion: z.number().int().nonnegative(),
+});

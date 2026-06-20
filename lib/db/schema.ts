@@ -67,6 +67,11 @@ export const idempotencyStatusEnum = pgEnum("idempotency_status", [
 export const riskSeverityEnum = pgEnum("risk_severity", ["low", "medium", "high"]);
 export const riskStatusEnum = pgEnum("risk_status", ["open", "investigating", "resolved"]);
 export const reportStatusEnum = pgEnum("report_status", ["pending", "completed", "failed"]);
+export const providerPolicyDecisionEnum = pgEnum("provider_policy_decision", [
+  "allowed",
+  "review",
+  "blocked",
+]);
 
 export type WalletCapabilities = {
   observable: boolean;
@@ -323,6 +328,27 @@ export const budgets = pgTable(
       columns: [table.workspaceId, table.taskId],
       foreignColumns: [tasks.workspaceId, tasks.id],
     }).onDelete("cascade"),
+  ],
+);
+
+export const providerPolicies = pgTable(
+  "provider_policies",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    providerKey: text("provider_key").notNull(),
+    displayName: text("display_name").notNull(),
+    decision: providerPolicyDecisionEnum("decision").notNull().default("review"),
+    version: integer("version").notNull().default(1),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("provider_policy_workspace_key_unique").on(table.workspaceId, table.providerKey),
+    index("provider_policy_workspace_decision_idx").on(table.workspaceId, table.decision),
   ],
 );
 

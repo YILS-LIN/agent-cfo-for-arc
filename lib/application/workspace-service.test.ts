@@ -23,6 +23,7 @@ import {
   budgets,
   idempotencyKeys,
   paymentEvents,
+  providerPolicies,
   riskSignals,
   tasks,
   wallets,
@@ -283,6 +284,36 @@ describe("WorkspaceApplicationService", () => {
     expect(summary.wallets).toMatchObject([{ spent: "0.000001", budgetUsed: 25 }]);
     expect(summary.tasks).toMatchObject([{ spent: "0.000001", paymentCount: 1 }]);
     expect(summary.providers).toMatchObject([{ name: "Summary API", spent: "0.000001" }]);
+  });
+
+  it("persists tenant-scoped provider decisions with optimistic versions", async () => {
+    const created = await service.setProviderPolicy(owner, {
+      providerKey: "provider-1",
+      displayName: "Research API",
+      decision: "allowed",
+      expectedVersion: 0,
+    });
+    const updated = await service.setProviderPolicy(owner, {
+      providerKey: "provider-1",
+      displayName: "Research API",
+      decision: "blocked",
+      expectedVersion: 1,
+    });
+
+    expect(created).toMatchObject({ decision: "allowed", version: 1 });
+    expect(updated).toMatchObject({ decision: "blocked", version: 2 });
+    await expect(
+      service.setProviderPolicy(owner, {
+        providerKey: "provider-1",
+        displayName: "Research API",
+        decision: "review",
+        expectedVersion: 1,
+      }),
+    ).rejects.toBeInstanceOf(OptimisticLockError);
+    await expect(service.listProviderPolicies(owner)).resolves.toMatchObject([
+      { providerKey: "provider-1", workspaceId: owner.workspaceId },
+    ]);
+    await expect(database.select().from(providerPolicies)).resolves.toHaveLength(1);
   });
 
   it("persists deterministic risk analysis, deduplicates replays, and resolves stale signals", async () => {
