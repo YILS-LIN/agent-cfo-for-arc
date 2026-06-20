@@ -35,7 +35,7 @@ export type AgentMetrics = {
 
 export type AgentSpendSummary = {
   analysis: {
-    source: "demo" | "arc";
+    source: "demo" | "arc" | "workspace";
     isLive: boolean;
     calculatedAt: string;
     version: string;

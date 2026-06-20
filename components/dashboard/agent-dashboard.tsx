@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CheckCircle2,
@@ -23,8 +23,10 @@ import {
 import { ProviderMark } from "@/components/dashboard/provider-mark";
 import { AppShell } from "@/components/dashboard/app-shell";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
 import { Button } from "@/components/ui/button";
 import { ARC_TESTNET_EXPLORER, VERIFIED_EVIDENCE_WALLET } from "@/lib/arc/evidence-config";
+import { getApiErrorMessage } from "@/lib/client/api";
 import type { UsdcAmount } from "@/lib/domain/usdc";
 import { cn, compactAddress, formatCurrency, formatPercent } from "@/lib/utils";
 import type { AgentSpendSummary, TaskSummary } from "@/types/agent";
@@ -58,12 +60,16 @@ function WalletAnalyzer({
   status,
   onWalletChange,
   onAnalyze,
+  readOnly = false,
+  actionLabel = "Analyze Wallet",
 }: {
   wallet: string;
   isLoading: boolean;
   status: string;
   onWalletChange: (wallet: string) => void;
   onAnalyze: () => void;
+  readOnly?: boolean;
+  actionLabel?: string;
 }) {
   return (
     <section className="dashboard-card relative overflow-hidden rounded-lg p-4">
@@ -84,13 +90,15 @@ function WalletAnalyzer({
             <label className="text-sm font-bold" htmlFor="wallet">
               Agent Wallet Address
             </label>
-            <button
-              type="button"
-              className="text-[11px] font-semibold text-blue hover:underline"
-              onClick={() => onWalletChange(VERIFIED_EVIDENCE_WALLET)}
-            >
-              Use verified Arc sample
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                className="text-[11px] font-semibold text-blue hover:underline"
+                onClick={() => onWalletChange(VERIFIED_EVIDENCE_WALLET)}
+              >
+                Use verified Arc sample
+              </button>
+            )}
           </div>
           <div className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-line bg-white px-4 py-2.5">
             <input
@@ -98,6 +106,7 @@ function WalletAnalyzer({
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
               value={wallet}
               onChange={(event) => onWalletChange(event.target.value)}
+              readOnly={readOnly}
               spellCheck={false}
             />
             <button
@@ -117,7 +126,7 @@ function WalletAnalyzer({
           ) : (
             <Sparkles className="size-4" />
           )}
-          Analyze Wallet
+          {actionLabel}
         </Button>
       </div>
     </section>
@@ -148,8 +157,10 @@ function SpendFlow({
         </div>
         <div className="grid gap-2">
           {categories.map((category, index) => {
-            const Icon = categoryIcons[category.category];
-            const colors = categoryColors[category.category];
+            const Icon = categoryIcons[category.category as keyof typeof categoryIcons] ?? Layers3;
+            const colors =
+              categoryColors[category.category as keyof typeof categoryColors] ??
+              "bg-slate-400 text-slate-500";
 
             return (
               <div
@@ -401,15 +412,103 @@ function AiInsight({ summary }: { summary: AgentSpendSummary }) {
   );
 }
 
+function workspaceLoadingSummary(initial: AgentSpendSummary): AgentSpendSummary {
+  return {
+    ...initial,
+    analysis: {
+      source: "workspace",
+      isLive: true,
+      calculatedAt: new Date(0).toISOString(),
+      version: "workspace-loading",
+    },
+    profile: {
+      ...initial.profile,
+      wallet: "",
+      displayName: "Workspace portfolio",
+      budget: "0",
+      owner: "Workspace member",
+    },
+    metrics: {
+      totalSpend: "0",
+      paymentCount: 0,
+      averagePayment: "0",
+      budgetUsed: 0,
+      topCategory: "Unknown",
+      riskLevel: "Low",
+    },
+    payments: [],
+    providers: [],
+    categories: [],
+    risks: [],
+    tasks: [],
+    report: {
+      ...initial.report,
+      headline: "Loading persisted workspace facts.",
+      summary: "The dashboard is waiting for tenant-scoped financial data.",
+      recommendation: "No recommendation is generated until workspace data is loaded.",
+      projectedSavingsPercent: 0,
+    },
+  };
+}
+
 export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
-  const [summary, setSummary] = useState(initialSummary);
-  const [wallet, setWallet] = useState(initialSummary.profile.wallet);
+  const { mode, authenticated, session, apiFetch } = useWorkspaceSession();
+  const [demoSummary, setDemoSummary] = useState(initialSummary);
+  const [workspaceSummary, setWorkspaceSummary] = useState<AgentSpendSummary | null>(null);
+  const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
+  const [demoWallet, setDemoWallet] = useState(initialSummary.profile.wallet);
   const [isLoading, setIsLoading] = useState(false);
-  const [status, setStatus] = useState(
+  const [demoStatus, setDemoStatus] = useState(
     initialSummary.analysis.isLive
       ? "LIVE EVIDENCE · Circle Gateway settlement verified against Arc Testnet."
       : "DEMO · Deterministic local payment facts; no live Arc sync.",
   );
+  const [workspaceStatus, setWorkspaceStatus] = useState("Loading persisted workspace facts…");
+  const usingPersistentWorkspace = mode === "persistent" && authenticated;
+  const workspaceLoaded = Boolean(
+    session && workspaceSummary && loadedWorkspaceId === session.workspaceId,
+  );
+  const loadingSummary = useMemo(() => workspaceLoadingSummary(initialSummary), [initialSummary]);
+  const summary = usingPersistentWorkspace
+    ? workspaceLoaded
+      ? workspaceSummary!
+      : loadingSummary
+    : demoSummary;
+  const wallet = usingPersistentWorkspace ? summary.profile.wallet : demoWallet;
+  const status = usingPersistentWorkspace ? workspaceStatus : demoStatus;
+
+  const loadWorkspaceDashboard = useCallback(
+    async (workspaceId: string, signal?: AbortSignal) => {
+      const response = await apiFetch("/api/analytics/dashboard", { signal });
+      if (!response.ok) {
+        throw new Error(await getApiErrorMessage(response, "Unable to load workspace dashboard"));
+      }
+      const nextSummary = (await response.json()) as AgentSpendSummary;
+      signal?.throwIfAborted();
+      setWorkspaceSummary(nextSummary);
+      setLoadedWorkspaceId(workspaceId);
+      setWorkspaceStatus(
+        `WORKSPACE · ${nextSummary.metrics.paymentCount} persisted payments through ${nextSummary.profile.dateRange.to}.`,
+      );
+    },
+    [apiFetch],
+  );
+
+  useEffect(() => {
+    if (!usingPersistentWorkspace || !session) return;
+    const controller = new AbortController();
+    void Promise.resolve()
+      .then(() => loadWorkspaceDashboard(session.workspaceId, controller.signal))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setWorkspaceSummary(null);
+        setLoadedWorkspaceId(session.workspaceId);
+        setWorkspaceStatus(
+          error instanceof Error ? error.message : "Unable to load workspace dashboard",
+        );
+      });
+    return () => controller.abort();
+  }, [loadWorkspaceDashboard, session, usingPersistentWorkspace]);
 
   const metrics = useMemo(
     () => [
@@ -443,7 +542,20 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
 
   async function analyzeWallet() {
     setIsLoading(true);
-    setStatus("Checking the configured analysis adapter...");
+    if (usingPersistentWorkspace && session) {
+      setWorkspaceStatus("Refreshing tenant-scoped financial facts…");
+      try {
+        await loadWorkspaceDashboard(session.workspaceId);
+      } catch (error) {
+        setWorkspaceStatus(
+          error instanceof Error ? error.message : "Unable to refresh workspace dashboard",
+        );
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+    setDemoStatus("Checking the configured analysis adapter...");
 
     try {
       const response = await fetch(`/api/agents/${encodeURIComponent(wallet)}/summary`, {
@@ -456,14 +568,14 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
       }
 
       const nextSummary = (await response.json()) as AgentSpendSummary;
-      setSummary(nextSummary);
-      setStatus(
+      setDemoSummary(nextSummary);
+      setDemoStatus(
         nextSummary.analysis.isLive
           ? `LIVE EVIDENCE · Circle Gateway + Arc Testnet verified at ${new Date(nextSummary.analysis.calculatedAt).toLocaleTimeString()}.`
           : `DEMO · Recalculated ${compactAddress(nextSummary.profile.wallet)} from local fixtures.`,
       );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to analyze wallet.");
+      setDemoStatus(error instanceof Error ? error.message : "Unable to analyze wallet.");
     } finally {
       setIsLoading(false);
     }
@@ -471,7 +583,7 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
 
   async function runDemoAgent() {
     setIsLoading(true);
-    setStatus("Running demo research agent and generating nanopayment events...");
+    setDemoStatus("Running demo research agent and generating nanopayment events...");
 
     try {
       const response = await fetch("/api/demo/run-agent", {
@@ -486,11 +598,13 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
         eventsGenerated: number;
         summary: AgentSpendSummary;
       };
-      setSummary(payload.summary);
-      setWallet(payload.summary.profile.wallet);
-      setStatus(`Demo agent completed. ${payload.eventsGenerated} x402-style payments generated.`);
+      setDemoSummary(payload.summary);
+      setDemoWallet(payload.summary.profile.wallet);
+      setDemoStatus(
+        `Demo agent completed. ${payload.eventsGenerated} x402-style payments generated.`,
+      );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Demo agent run failed.");
+      setDemoStatus(error instanceof Error ? error.message : "Demo agent run failed.");
     } finally {
       setIsLoading(false);
     }
@@ -499,16 +613,24 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
   return (
     <AppShell
       title="Agent CFO for Arc"
-      description="Deterministic spend-analysis demo · live Arc adapter pending"
+      description={
+        usingPersistentWorkspace
+          ? "Tenant-scoped Arc spend intelligence from persisted financial facts"
+          : "Deterministic demo with a separately verified public Arc sample"
+      }
       owner={summary.profile.owner}
       actions={
-        <Button disabled={isLoading} onClick={runDemoAgent} variant="soft">
+        <Button
+          disabled={isLoading}
+          onClick={() => void (usingPersistentWorkspace ? analyzeWallet() : runDemoAgent())}
+          variant="soft"
+        >
           {isLoading ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <Sparkles className="size-4" />
           )}
-          Run Demo Agent
+          {usingPersistentWorkspace ? "Refresh workspace" : "Run Demo Agent"}
         </Button>
       }
     >
@@ -518,8 +640,10 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
             wallet={wallet}
             isLoading={isLoading}
             status={status}
-            onWalletChange={setWallet}
+            onWalletChange={setDemoWallet}
             onAnalyze={analyzeWallet}
+            readOnly={usingPersistentWorkspace}
+            actionLabel={usingPersistentWorkspace ? "Refresh workspace" : "Analyze Wallet"}
           />
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

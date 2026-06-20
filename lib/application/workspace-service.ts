@@ -3,6 +3,7 @@ import {
   buildRiskAnalysisInputHash,
   evaluatePersistentRisks,
 } from "@/lib/analytics/persistent-risk";
+import { buildPersistentDashboard } from "@/lib/analytics/persistent-dashboard";
 import { buildPersistentWorkspaceSummary } from "@/lib/analytics/persistent-summary";
 import type { AppDatabase } from "@/lib/db/database";
 import {
@@ -220,6 +221,43 @@ export class WorkspaceApplicationService {
       );
     }
     return buildPersistentWorkspaceSummary({ ...input, payments, budgets, wallets, tasks, risks });
+  }
+
+  async getWorkspaceDashboard(context: AuthContext, input: { rangeStart: Date; rangeEnd: Date }) {
+    if (input.rangeEnd <= input.rangeStart) {
+      throw new AnalysisLimitExceededError("Dashboard range end must be after its start");
+    }
+    if (input.rangeEnd.getTime() - input.rangeStart.getTime() > 366 * 24 * 60 * 60 * 1_000) {
+      throw new AnalysisLimitExceededError("Dashboard range cannot exceed 366 days");
+    }
+    const [payments, budgets, wallets, tasks, risks] = await Promise.all([
+      this.payments.listForAnalysis(context, { from: input.rangeStart, to: input.rangeEnd }),
+      this.budgets.list(context),
+      this.wallets.list(context),
+      this.tasks.list(context),
+      this.risks.list(context),
+    ]);
+    if (payments.length > 10_000) {
+      throw new AnalysisLimitExceededError(
+        "Dashboard exceeds 10,000 payments; use a shorter date range",
+      );
+    }
+    const summary = buildPersistentWorkspaceSummary({
+      ...input,
+      payments,
+      budgets,
+      wallets,
+      tasks,
+      risks,
+    });
+    return buildPersistentDashboard({
+      calculatedAt: new Date(),
+      summary,
+      payments,
+      wallets,
+      tasks,
+      risks,
+    });
   }
 
   async analyzeRisks(

@@ -1,6 +1,6 @@
 import type { UsdcAmount } from "@/lib/domain/usdc";
 
-export type SpendCategory = "APIs" | "Data" | "Models" | "Creator Content" | "Compute" | "Storage";
+export type SpendCategory = string;
 
 export type PaymentStatus = "completed" | "pending" | "failed";
 

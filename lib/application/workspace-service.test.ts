@@ -284,6 +284,16 @@ describe("WorkspaceApplicationService", () => {
     expect(summary.wallets).toMatchObject([{ spent: "0.000001", budgetUsed: 25 }]);
     expect(summary.tasks).toMatchObject([{ spent: "0.000001", paymentCount: 1 }]);
     expect(summary.providers).toMatchObject([{ name: "Summary API", spent: "0.000001" }]);
+
+    const dashboard = await service.getWorkspaceDashboard(owner, {
+      rangeStart: new Date("2026-06-20T00:00:00.000Z"),
+      rangeEnd: new Date("2026-06-21T00:00:00.000Z"),
+    });
+    expect(dashboard).toMatchObject({
+      analysis: { source: "workspace", isLive: true },
+      metrics: { totalSpend: "0.000001", paymentCount: 1 },
+      profile: { wallet: wallet.wallet.address },
+    });
   });
 
   it("persists tenant-scoped provider decisions with optimistic versions", async () => {
