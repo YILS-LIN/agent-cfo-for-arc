@@ -19,9 +19,11 @@ import {
 } from "@/lib/db/repositories";
 import {
   auditEvents,
+  analysisSnapshots,
   budgets,
   idempotencyKeys,
   paymentEvents,
+  riskSignals,
   tasks,
   wallets,
 } from "@/lib/db/schema";
@@ -238,6 +240,60 @@ describe("WorkspaceApplicationService", () => {
       }),
     ).rejects.toBeInstanceOf(RepositoryNotFoundError);
     await expect(database.select().from(paymentEvents)).resolves.toHaveLength(0);
+  });
+
+  it("persists deterministic risk analysis, deduplicates replays, and resolves stale signals", async () => {
+    const wallet = await service.createWallet(owner, walletInput(), "risk-wallet");
+    const budget = await service.createBudget(
+      owner,
+      {
+        walletId: wallet.wallet.id,
+        periodType: "daily",
+        periodStart: new Date("2026-06-20T00:00:00.000Z"),
+        periodEnd: new Date("2026-06-21T00:00:00.000Z"),
+        amount: "1",
+        warningThreshold: 80,
+      },
+      "risk-budget",
+    );
+    await service.ingestPayment(owner, {
+      walletId: wallet.wallet.id,
+      externalId: "risk-payment",
+      amount: "1",
+      occurredAt: new Date("2026-06-20T12:00:00.000Z"),
+      source: "x402",
+    });
+    const range = {
+      rangeStart: new Date("2026-06-20T00:00:00.000Z"),
+      rangeEnd: new Date("2026-06-21T00:00:00.000Z"),
+    };
+
+    const first = await service.analyzeRisks(owner, range);
+    const replay = await service.analyzeRisks(owner, range);
+    const [signal] = await service.listRisks(owner);
+
+    expect(first).toMatchObject({ replayed: false, signals: [{ severity: "high" }] });
+    expect(replay.replayed).toBe(true);
+    expect(signal).toMatchObject({ status: "open", version: 1 });
+    await expect(database.select().from(analysisSnapshots)).resolves.toHaveLength(1);
+    await expect(database.select().from(riskSignals)).resolves.toHaveLength(1);
+
+    const investigating = await service.updateRiskStatus(owner, {
+      riskId: signal!.id,
+      expectedVersion: signal!.version,
+      status: "investigating",
+    });
+    expect(investigating).toMatchObject({ status: "investigating", version: 2 });
+
+    await service.updateBudgetAmount(owner, {
+      budgetId: budget.budget.id,
+      expectedVersion: 1,
+      amount: "100",
+    });
+    const recalculated = await service.analyzeRisks(owner, range);
+    const [resolved] = await service.listRisks(owner);
+    expect(recalculated.resolvedCount).toBe(1);
+    expect(resolved).toMatchObject({ status: "resolved", version: 3 });
   });
 
   it("marks failed idempotent mutations without creating an audit record", async () => {

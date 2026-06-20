@@ -1,14 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, gt, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, lt, ne, notInArray, sql } from "drizzle-orm";
 
+import type { PersistentRiskRule } from "@/lib/analytics/persistent-risk";
 import type { AppDatabase, WorkspaceScope } from "@/lib/db/database";
 import { parseUsdc } from "@/lib/domain/usdc";
 import {
+  analysisSnapshots,
   auditEvents,
   budgets,
   idempotencyKeys,
   paymentEvents,
+  riskSignals,
   tasks,
   users,
   wallets,
@@ -204,6 +207,21 @@ export class PaymentRepository {
     }
     return { payment: existing, created: false } as const;
   }
+
+  async listForAnalysis(scope: WorkspaceScope, filters: { from: Date; to: Date }) {
+    return this.database
+      .select()
+      .from(paymentEvents)
+      .where(
+        and(
+          eq(paymentEvents.workspaceId, scope.workspaceId),
+          gte(paymentEvents.occurredAt, filters.from),
+          lt(paymentEvents.occurredAt, filters.to),
+        ),
+      )
+      .orderBy(asc(paymentEvents.occurredAt), asc(paymentEvents.id))
+      .limit(10_001);
+  }
 }
 
 export class TaskRepository {
@@ -352,6 +370,157 @@ export class AuditRepository {
       .returning();
     if (!event) throw new Error("Audit event insert returned no row");
     return event;
+  }
+}
+
+export class AnalysisRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async createOrGet(
+    scope: WorkspaceScope,
+    input: {
+      rangeStart: Date;
+      rangeEnd: Date;
+      version: string;
+      inputHash: string;
+      result: Record<string, unknown>;
+    },
+  ) {
+    const [created] = await this.database
+      .insert(analysisSnapshots)
+      .values({ id: randomUUID(), workspaceId: scope.workspaceId, ...input })
+      .onConflictDoNothing({
+        target: [
+          analysisSnapshots.workspaceId,
+          analysisSnapshots.inputHash,
+          analysisSnapshots.version,
+        ],
+      })
+      .returning();
+    if (created) return { snapshot: created, created: true } as const;
+
+    const [existing] = await this.database
+      .select()
+      .from(analysisSnapshots)
+      .where(
+        and(
+          eq(analysisSnapshots.workspaceId, scope.workspaceId),
+          eq(analysisSnapshots.inputHash, input.inputHash),
+          eq(analysisSnapshots.version, input.version),
+        ),
+      )
+      .limit(1);
+    if (!existing) throw new Error("Analysis conflict occurred without an existing snapshot");
+    return { snapshot: existing, created: false } as const;
+  }
+}
+
+export class RiskRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async list(
+    scope: WorkspaceScope,
+    filters: {
+      status?: "open" | "investigating" | "resolved";
+      severity?: "low" | "medium" | "high";
+    } = {},
+  ) {
+    const conditions = [eq(riskSignals.workspaceId, scope.workspaceId)];
+    if (filters.status) conditions.push(eq(riskSignals.status, filters.status));
+    if (filters.severity) conditions.push(eq(riskSignals.severity, filters.severity));
+    return this.database
+      .select()
+      .from(riskSignals)
+      .where(and(...conditions))
+      .orderBy(desc(riskSignals.detectedAt), desc(riskSignals.updatedAt));
+  }
+
+  async upsertForSnapshot(
+    scope: WorkspaceScope,
+    input: { analysisSnapshotId: string; rules: PersistentRiskRule[] },
+  ) {
+    if (input.rules.length === 0) return [];
+    const now = new Date();
+    return this.database
+      .insert(riskSignals)
+      .values(
+        input.rules.map((rule) => ({
+          id: randomUUID(),
+          workspaceId: scope.workspaceId,
+          analysisSnapshotId: input.analysisSnapshotId,
+          walletId: rule.walletId,
+          taskId: rule.taskId,
+          ruleId: rule.ruleId,
+          severity: rule.severity,
+          title: rule.title,
+          description: rule.description,
+          evidence: { ...rule.evidence, rule: rule.rule },
+          detectedAt: now,
+          updatedAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [riskSignals.workspaceId, riskSignals.ruleId],
+        set: {
+          analysisSnapshotId: input.analysisSnapshotId,
+          severity: sql`excluded.severity`,
+          title: sql`excluded.title`,
+          description: sql`excluded.description`,
+          evidence: sql`excluded.evidence`,
+          updatedAt: now,
+        },
+      })
+      .returning();
+  }
+
+  async resolveStale(scope: WorkspaceScope, currentRuleIds: string[]) {
+    const conditions = [
+      eq(riskSignals.workspaceId, scope.workspaceId),
+      ne(riskSignals.status, "resolved"),
+    ];
+    if (currentRuleIds.length > 0) {
+      conditions.push(notInArray(riskSignals.ruleId, currentRuleIds));
+    }
+    return this.database
+      .update(riskSignals)
+      .set({
+        status: "resolved",
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+        version: sql`${riskSignals.version} + 1`,
+      })
+      .where(and(...conditions))
+      .returning();
+  }
+
+  async updateStatus(
+    scope: WorkspaceScope,
+    input: {
+      riskId: string;
+      expectedVersion: number;
+      status: "open" | "investigating" | "resolved";
+    },
+  ) {
+    const now = new Date();
+    const [risk] = await this.database
+      .update(riskSignals)
+      .set({
+        status: input.status,
+        resolvedAt: input.status === "resolved" ? now : null,
+        updatedAt: now,
+        version: sql`${riskSignals.version} + 1`,
+      })
+      .where(
+        and(
+          eq(riskSignals.workspaceId, scope.workspaceId),
+          eq(riskSignals.id, input.riskId),
+          eq(riskSignals.version, input.expectedVersion),
+        ),
+      )
+      .returning();
+    if (!risk)
+      throw new OptimisticLockError("Risk signal was updated by another request or not found");
+    return risk;
   }
 }
 

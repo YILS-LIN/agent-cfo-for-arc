@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import {
+  AnalysisLimitExceededError,
   ApplicationPermissionError,
   IdempotencyKeyRequiredError,
   IdempotencyRequestUnresolvedError,
@@ -40,6 +41,12 @@ export function apiErrorResponse(error: unknown) {
   }
   if (error instanceof ApplicationPermissionError) {
     return NextResponse.json({ error: error.message, code: "ROLE_FORBIDDEN" }, { status: 403 });
+  }
+  if (error instanceof AnalysisLimitExceededError) {
+    return NextResponse.json(
+      { error: error.message, code: "ANALYSIS_LIMIT_EXCEEDED" },
+      { status: 422 },
+    );
   }
   if (error instanceof IdempotencyConflictError) {
     return NextResponse.json(

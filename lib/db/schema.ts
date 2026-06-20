@@ -376,6 +376,7 @@ export const riskSignals = pgTable(
     title: text("title").notNull(),
     description: text("description").notNull(),
     evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull(),
+    version: integer("version").notNull().default(1),
     detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().defaultNow(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -383,6 +384,7 @@ export const riskSignals = pgTable(
   (table) => [
     index("risk_workspace_status_idx").on(table.workspaceId, table.status, table.detectedAt),
     index("risk_wallet_idx").on(table.walletId),
+    uniqueIndex("risk_workspace_rule_unique").on(table.workspaceId, table.ruleId),
     foreignKey({
       name: "risk_workspace_wallet_fk",
       columns: [table.workspaceId, table.walletId],

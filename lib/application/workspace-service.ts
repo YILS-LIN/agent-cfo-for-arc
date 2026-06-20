@@ -1,11 +1,17 @@
 import type { AuthContext } from "@/lib/auth/types";
+import {
+  buildRiskAnalysisInputHash,
+  evaluatePersistentRisks,
+} from "@/lib/analytics/persistent-risk";
 import type { AppDatabase } from "@/lib/db/database";
 import {
+  AnalysisRepository,
   AuditRepository,
   BudgetRepository,
   IdempotencyRepository,
   PaymentRepository,
   RepositoryNotFoundError,
+  RiskRepository,
   TaskRepository,
   WalletRepository,
 } from "@/lib/db/repositories";
@@ -21,6 +27,7 @@ import { ingestPaymentInputSchema } from "@/lib/db/validation";
 export class ApplicationPermissionError extends Error {}
 export class IdempotencyKeyRequiredError extends Error {}
 export class IdempotencyRequestUnresolvedError extends Error {}
+export class AnalysisLimitExceededError extends Error {}
 
 type MutationSource = "web" | "mcp" | "system";
 
@@ -46,6 +53,7 @@ export class WorkspaceApplicationService {
   private readonly idempotency: IdempotencyRepository;
   private readonly tasks: TaskRepository;
   private readonly payments: PaymentRepository;
+  private readonly risks: RiskRepository;
 
   constructor(private readonly database: AppDatabase) {
     this.wallets = new WalletRepository(database);
@@ -54,6 +62,7 @@ export class WorkspaceApplicationService {
     this.idempotency = new IdempotencyRepository(database);
     this.tasks = new TaskRepository(database);
     this.payments = new PaymentRepository(database);
+    this.risks = new RiskRepository(database);
   }
 
   listWallets(context: AuthContext) {
@@ -136,6 +145,108 @@ export class WorkspaceApplicationService {
     filters: { walletId?: string; from?: Date; to?: Date; limit?: number } = {},
   ) {
     return this.payments.list(context, filters);
+  }
+
+  listRisks(
+    context: AuthContext,
+    filters: {
+      status?: "open" | "investigating" | "resolved";
+      severity?: "low" | "medium" | "high";
+    } = {},
+  ) {
+    return this.risks.list(context, filters);
+  }
+
+  async analyzeRisks(
+    context: AuthContext,
+    input: { rangeStart: Date; rangeEnd: Date },
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    if (input.rangeEnd <= input.rangeStart) throw new Error("Risk analysis range is invalid");
+    if (input.rangeEnd.getTime() - input.rangeStart.getTime() > 366 * 24 * 60 * 60 * 1_000) {
+      throw new AnalysisLimitExceededError("Risk analysis range cannot exceed 366 days");
+    }
+    const [payments, budgets] = await Promise.all([
+      this.payments.listForAnalysis(context, { from: input.rangeStart, to: input.rangeEnd }),
+      this.budgets.list(context),
+    ]);
+    if (payments.length > 10_000) {
+      throw new AnalysisLimitExceededError(
+        "Risk analysis exceeds 10,000 payments; use a shorter date range",
+      );
+    }
+    const riskInput = { payments, budgets };
+    const rules = evaluatePersistentRisks(riskInput);
+    const inputHash = buildRiskAnalysisInputHash({ ...input, ...riskInput });
+    const result = {
+      paymentCount: payments.length,
+      budgetCount: budgets.length,
+      ruleCount: rules.length,
+      ruleIds: rules.map((rule) => rule.ruleId),
+    };
+
+    return this.database.transaction(async (transaction) => {
+      const analyses = new AnalysisRepository(transaction);
+      const risks = new RiskRepository(transaction);
+      const audits = new AuditRepository(transaction);
+      const analysis = await analyses.createOrGet(context, {
+        ...input,
+        version: "risk-v1",
+        inputHash,
+        result,
+      });
+      const signals = await risks.upsertForSnapshot(context, {
+        analysisSnapshotId: analysis.snapshot.id,
+        rules,
+      });
+      const resolved = await risks.resolveStale(
+        context,
+        rules.map((rule) => rule.ruleId),
+      );
+      if (analysis.created) {
+        await audits.record(context, {
+          actorUserId: context.userId,
+          action: "risk.analysis_completed",
+          entityType: "analysis_snapshot",
+          entityId: analysis.snapshot.id,
+          source,
+          payload: result,
+        });
+      }
+      return {
+        snapshot: analysis.snapshot,
+        signals,
+        resolvedCount: resolved.length,
+        replayed: !analysis.created,
+      };
+    });
+  }
+
+  async updateRiskStatus(
+    context: AuthContext,
+    input: {
+      riskId: string;
+      expectedVersion: number;
+      status: "open" | "investigating" | "resolved";
+    },
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    return this.database.transaction(async (transaction) => {
+      const risks = new RiskRepository(transaction);
+      const audits = new AuditRepository(transaction);
+      const risk = await risks.updateStatus(context, input);
+      await audits.record(context, {
+        actorUserId: context.userId,
+        action: "risk.status_updated",
+        entityType: "risk_signal",
+        entityId: risk.id,
+        source,
+        payload: { status: risk.status, version: risk.version },
+      });
+      return risk;
+    });
   }
 
   async ingestPayment(

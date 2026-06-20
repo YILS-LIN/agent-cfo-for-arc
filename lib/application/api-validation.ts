@@ -62,3 +62,23 @@ export const listPaymentsQuerySchema = z.object({
   to: z.coerce.date().optional(),
   limit: z.coerce.number().int().positive().max(1_000).default(500),
 });
+
+export const analyzeRisksRequestSchema = z
+  .object({
+    rangeStart: z.coerce.date().optional(),
+    rangeEnd: z.coerce.date().optional(),
+  })
+  .refine((input) => !input.rangeStart || !input.rangeEnd || input.rangeEnd > input.rangeStart, {
+    message: "Risk analysis end must be after its start",
+    path: ["rangeEnd"],
+  });
+
+export const listRisksQuerySchema = z.object({
+  status: z.enum(["open", "investigating", "resolved"]).optional(),
+  severity: z.enum(["low", "medium", "high"]).optional(),
+});
+
+export const updateRiskStatusRequestSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  status: z.enum(["open", "investigating", "resolved"]),
+});
