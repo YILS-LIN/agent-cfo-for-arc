@@ -458,6 +458,8 @@ export const syncCursors = pgTable(
     source: paymentSourceEnum("source").notNull(),
     cursor: text("cursor"),
     status: syncStatusEnum("status").notNull().default("idle"),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     lastError: text("last_error"),
     lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true }),
     lastSucceededAt: timestamp("last_succeeded_at", { withTimezone: true }),

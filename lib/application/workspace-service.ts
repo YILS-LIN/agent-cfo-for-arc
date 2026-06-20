@@ -31,6 +31,10 @@ export class AnalysisLimitExceededError extends Error {}
 
 type MutationSource = "web" | "mcp" | "system";
 
+function mutationActor(context: AuthContext, source: MutationSource) {
+  return source === "system" ? undefined : context.userId;
+}
+
 function requireWriteRole(context: AuthContext) {
   if (context.role === "viewer") {
     throw new ApplicationPermissionError("Viewer role cannot modify workspace data");
@@ -104,7 +108,7 @@ export class WorkspaceApplicationService {
         const idempotency = new IdempotencyRepository(transaction);
         const created = await wallets.create(context, input);
         await audits.record(context, {
-          actorUserId: context.userId,
+          actorUserId: mutationActor(context, source),
           action: "wallet.created",
           entityType: "wallet",
           entityId: created.id,
@@ -206,7 +210,7 @@ export class WorkspaceApplicationService {
       );
       if (analysis.created) {
         await audits.record(context, {
-          actorUserId: context.userId,
+          actorUserId: mutationActor(context, source),
           action: "risk.analysis_completed",
           entityType: "analysis_snapshot",
           entityId: analysis.snapshot.id,
@@ -238,7 +242,7 @@ export class WorkspaceApplicationService {
       const audits = new AuditRepository(transaction);
       const risk = await risks.updateStatus(context, input);
       await audits.record(context, {
-        actorUserId: context.userId,
+        actorUserId: mutationActor(context, source),
         action: "risk.status_updated",
         entityType: "risk_signal",
         entityId: risk.id,
@@ -268,7 +272,7 @@ export class WorkspaceApplicationService {
       const result = await payments.ingest(context, normalizedInput);
       if (result.created) {
         await audits.record(context, {
-          actorUserId: context.userId,
+          actorUserId: mutationActor(context, source),
           action: "payment.ingested",
           entityType: "payment",
           entityId: result.payment.id,
@@ -320,7 +324,7 @@ export class WorkspaceApplicationService {
         const idempotency = new IdempotencyRepository(transaction);
         const created = await tasks.create(context, input);
         await audits.record(context, {
-          actorUserId: context.userId,
+          actorUserId: mutationActor(context, source),
           action: "task.created",
           entityType: "task",
           entityId: created.id,
@@ -355,7 +359,7 @@ export class WorkspaceApplicationService {
       const audits = new AuditRepository(transaction);
       const task = await tasks.updateStatus(context, input);
       await audits.record(context, {
-        actorUserId: context.userId,
+        actorUserId: mutationActor(context, source),
         action: "task.status_updated",
         entityType: "task",
         entityId: task.id,
@@ -373,7 +377,7 @@ export class WorkspaceApplicationService {
       const audits = new AuditRepository(transaction);
       const wallet = await wallets.setPrimary(context, walletId);
       await audits.record(context, {
-        actorUserId: context.userId,
+        actorUserId: mutationActor(context, source),
         action: "wallet.primary_set",
         entityType: "wallet",
         entityId: wallet.id,
@@ -417,7 +421,7 @@ export class WorkspaceApplicationService {
         const idempotency = new IdempotencyRepository(transaction);
         const created = await budgets.create(context, effectiveInput);
         await audits.record(context, {
-          actorUserId: context.userId,
+          actorUserId: mutationActor(context, source),
           action: "budget.created",
           entityType: "budget",
           entityId: created.id,
@@ -452,7 +456,7 @@ export class WorkspaceApplicationService {
       const audits = new AuditRepository(transaction);
       const budget = await budgets.updateAmount(context, input);
       await audits.record(context, {
-        actorUserId: context.userId,
+        actorUserId: mutationActor(context, source),
         action: "budget.amount_updated",
         entityType: "budget",
         entityId: budget.id,

@@ -11,13 +11,32 @@ import {
 } from "@/lib/application/workspace-service";
 import { authErrorResponse } from "@/lib/auth/server";
 import {
+  InternalAuthenticationNotConfiguredError,
+  InternalAuthenticationRequiredError,
+} from "@/lib/auth/internal";
+import {
   IdempotencyConflictError,
   OptimisticLockError,
   PaymentReplayConflictError,
   RepositoryNotFoundError,
+  SyncLeaseUnavailableError,
 } from "@/lib/db/repositories";
+import { SyncSourceUnavailableError } from "@/lib/sync/circle-public-adapter";
+import { SyncAdapterNotConfiguredError, SyncPermissionError } from "@/lib/sync/service";
 
 export function apiErrorResponse(error: unknown) {
+  if (error instanceof InternalAuthenticationRequiredError) {
+    return NextResponse.json(
+      { error: error.message, code: "INTERNAL_AUTHENTICATION_REQUIRED" },
+      { status: 401 },
+    );
+  }
+  if (error instanceof InternalAuthenticationNotConfiguredError) {
+    return NextResponse.json(
+      { error: error.message, code: "INTERNAL_AUTHENTICATION_NOT_CONFIGURED" },
+      { status: 503 },
+    );
+  }
   const authResponse = authErrorResponse(error);
   if (authResponse) return authResponse;
 
@@ -74,6 +93,24 @@ export function apiErrorResponse(error: unknown) {
   }
   if (error instanceof RepositoryNotFoundError) {
     return NextResponse.json({ error: error.message, code: "NOT_FOUND" }, { status: 404 });
+  }
+  if (error instanceof SyncPermissionError) {
+    return NextResponse.json({ error: error.message, code: "ROLE_FORBIDDEN" }, { status: 403 });
+  }
+  if (error instanceof SyncLeaseUnavailableError) {
+    return NextResponse.json(
+      { error: error.message, code: "SYNC_ALREADY_RUNNING" },
+      { status: 409, headers: { "Retry-After": "5" } },
+    );
+  }
+  if (
+    error instanceof SyncSourceUnavailableError ||
+    error instanceof SyncAdapterNotConfiguredError
+  ) {
+    return NextResponse.json(
+      { error: error.message, code: "SYNC_SOURCE_UNAVAILABLE" },
+      { status: 422 },
+    );
   }
   if (hasDatabaseErrorCode(error, "23505")) {
     return NextResponse.json(

@@ -29,6 +29,13 @@
       "when": 1781963217532,
       "tag": "0003_known_scorpion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781963670206,
+      "tag": "0004_strong_ben_urich",
+      "breakpoints": true
     }
   ]
 }

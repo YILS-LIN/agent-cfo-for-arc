@@ -82,3 +82,12 @@ export const updateRiskStatusRequestSchema = z.object({
   expectedVersion: z.number().int().positive(),
   status: z.enum(["open", "investigating", "resolved"]),
 });
+
+export const syncWalletRequestSchema = z.object({
+  source: z.enum(["arc", "circle_gateway", "x402"]),
+});
+
+export const internalPaymentIngestRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  payment: ingestPaymentRequestSchema,
+});

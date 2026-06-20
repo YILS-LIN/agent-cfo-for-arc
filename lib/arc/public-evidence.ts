@@ -105,12 +105,16 @@ function settlementToPayment(settlement: CircleSettlement): PaymentEvent {
   };
 }
 
-export async function getPublicArcEvidenceSummary(): Promise<AgentSpendSummary> {
+export async function getPublicArcEvidencePayments(): Promise<PaymentEvent[]> {
   const [, settlements] = await Promise.all([
     verifyBatchTransaction(),
     Promise.all(VERIFIED_EVIDENCE_SETTLEMENT_IDS.map(fetchSettlement)),
   ]);
-  const payments = settlements.map(settlementToPayment);
+  return settlements.map(settlementToPayment);
+}
+
+export async function getPublicArcEvidenceSummary(): Promise<AgentSpendSummary> {
+  const payments = await getPublicArcEvidencePayments();
 
   return buildAgentSpendSummary({
     wallet: VERIFIED_EVIDENCE_WALLET,

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, gt, gte, lt, ne, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
 
 import type { PersistentRiskRule } from "@/lib/analytics/persistent-risk";
 import type { AppDatabase, WorkspaceScope } from "@/lib/db/database";
@@ -12,6 +12,7 @@ import {
   idempotencyKeys,
   paymentEvents,
   riskSignals,
+  syncCursors,
   tasks,
   users,
   wallets,
@@ -74,6 +75,21 @@ export class WorkspaceRepository {
       )
       .limit(1);
     return membership ?? null;
+  }
+
+  async getSystemContext(workspaceId: string) {
+    const [workspace] = await this.database
+      .select({ ownerId: workspaces.ownerId })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    if (!workspace) throw new RepositoryNotFoundError("Workspace not found");
+    return {
+      userId: workspace.ownerId,
+      workspaceId,
+      role: "owner" as const,
+      identities: [],
+    };
   }
 }
 
@@ -521,6 +537,117 @@ export class RiskRepository {
     if (!risk)
       throw new OptimisticLockError("Risk signal was updated by another request or not found");
     return risk;
+  }
+}
+
+export class SyncLeaseUnavailableError extends Error {}
+
+export class SyncRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async acquire(
+    scope: WorkspaceScope,
+    input: {
+      walletId: string;
+      source: "arc" | "circle_gateway" | "x402" | "demo";
+      leaseMs?: number;
+    },
+  ) {
+    const now = new Date();
+    const leaseToken = randomUUID();
+    const leaseExpiresAt = new Date(now.getTime() + (input.leaseMs ?? 60_000));
+    const [cursor] = await this.database
+      .insert(syncCursors)
+      .values({
+        id: randomUUID(),
+        workspaceId: scope.workspaceId,
+        walletId: input.walletId,
+        source: input.source,
+        status: "syncing",
+        leaseToken,
+        leaseExpiresAt,
+        lastAttemptedAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [syncCursors.walletId, syncCursors.source],
+        set: {
+          status: "syncing",
+          leaseToken,
+          leaseExpiresAt,
+          lastError: null,
+          lastAttemptedAt: now,
+          updatedAt: now,
+        },
+        setWhere: or(
+          ne(syncCursors.status, "syncing"),
+          isNull(syncCursors.leaseExpiresAt),
+          lt(syncCursors.leaseExpiresAt, now),
+        ),
+      })
+      .returning();
+    if (!cursor) throw new SyncLeaseUnavailableError("Wallet sync is already running");
+    if (cursor.workspaceId !== scope.workspaceId) {
+      throw new RepositoryNotFoundError("Sync cursor does not belong to this workspace");
+    }
+    return cursor;
+  }
+
+  async complete(
+    scope: WorkspaceScope,
+    input: { id: string; leaseToken: string; cursor?: string },
+  ) {
+    const now = new Date();
+    const [record] = await this.database
+      .update(syncCursors)
+      .set({
+        cursor: input.cursor,
+        status: "ready",
+        leaseToken: null,
+        leaseExpiresAt: null,
+        lastError: null,
+        lastSucceededAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(syncCursors.workspaceId, scope.workspaceId),
+          eq(syncCursors.id, input.id),
+          eq(syncCursors.leaseToken, input.leaseToken),
+        ),
+      )
+      .returning();
+    if (!record) throw new SyncLeaseUnavailableError("Wallet sync lease expired before completion");
+    return record;
+  }
+
+  async fail(scope: WorkspaceScope, input: { id: string; leaseToken: string; error: string }) {
+    const [record] = await this.database
+      .update(syncCursors)
+      .set({
+        status: "failed",
+        leaseToken: null,
+        leaseExpiresAt: null,
+        lastError: input.error.slice(0, 1_000),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(syncCursors.workspaceId, scope.workspaceId),
+          eq(syncCursors.id, input.id),
+          eq(syncCursors.leaseToken, input.leaseToken),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async list(scope: WorkspaceScope) {
+    return this.database
+      .select()
+      .from(syncCursors)
+      .where(eq(syncCursors.workspaceId, scope.workspaceId))
+      .orderBy(desc(syncCursors.updatedAt));
   }
 }
 

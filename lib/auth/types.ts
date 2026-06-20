@@ -28,5 +28,6 @@ export interface AuthProvider {
 }
 
 export class AuthenticationRequiredError extends Error {}
+export class AuthenticationNotConfiguredError extends Error {}
 export class WorkspaceAccessDeniedError extends Error {}
 export class IdentityConflictError extends Error {}
