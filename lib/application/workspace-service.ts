@@ -140,10 +140,11 @@ export class WorkspaceApplicationService {
   ) {
     requireWriteRole(context);
     const key = normalizeIdempotencyKey(idempotencyKey);
+    const effectiveInput = { ...input, createdBy: context.userId };
     const claim = await this.idempotency.claim(context, {
       operation: "budget.create",
       key,
-      request: input,
+      request: effectiveInput,
     });
     if (claim.state === "completed") {
       const budgetId = claim.record.response?.budgetId;
@@ -162,7 +163,7 @@ export class WorkspaceApplicationService {
         const budgets = new BudgetRepository(transaction);
         const audits = new AuditRepository(transaction);
         const idempotency = new IdempotencyRepository(transaction);
-        const created = await budgets.create(context, input);
+        const created = await budgets.create(context, effectiveInput);
         await audits.record(context, {
           actorUserId: context.userId,
           action: "budget.created",

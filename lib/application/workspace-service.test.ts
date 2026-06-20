@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -128,7 +130,11 @@ describe("WorkspaceApplicationService", () => {
   });
 
   it("creates and replays budgets, then updates with optimistic locking", async () => {
-    const first = await service.createBudget(owner, budgetInput(), "budget-request-1");
+    const first = await service.createBudget(
+      owner,
+      { ...budgetInput(), createdBy: randomUUID() },
+      "budget-request-1",
+    );
     const replay = await service.createBudget(owner, budgetInput(), "budget-request-1");
     const updated = await service.updateBudgetAmount(owner, {
       budgetId: first.budget.id,
@@ -137,6 +143,7 @@ describe("WorkspaceApplicationService", () => {
     });
 
     expect(replay).toMatchObject({ replayed: true, budget: { id: first.budget.id } });
+    expect(first.budget.createdBy).toBe(owner.userId);
     expect(updated).toMatchObject({ amount: "12.000001", version: 2 });
     await expect(
       service.updateBudgetAmount(owner, {

@@ -6,9 +6,15 @@ export const createWalletRequestSchema = createWalletInputSchema;
 
 export const createBudgetRequestSchema = z
   .object({
-    ...createBudgetInputSchema.shape,
+    walletId: createBudgetInputSchema.shape.walletId,
+    taskId: createBudgetInputSchema.shape.taskId,
+    providerId: createBudgetInputSchema.shape.providerId,
+    periodType: createBudgetInputSchema.shape.periodType,
     periodStart: z.coerce.date(),
     periodEnd: z.coerce.date(),
+    amount: createBudgetInputSchema.shape.amount,
+    warningThreshold: createBudgetInputSchema.shape.warningThreshold,
+    hardLimitRequested: createBudgetInputSchema.shape.hardLimitRequested,
   })
   .refine((input) => input.periodEnd > input.periodStart, {
     message: "Budget period end must be after its start",
