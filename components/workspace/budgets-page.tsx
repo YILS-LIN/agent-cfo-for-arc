@@ -28,7 +28,7 @@ type PersistentBudget = {
   amount: UsdcAmount;
   warningThreshold: string;
   hardLimitRequested: boolean;
-  status: "active" | "exceeded" | "expired" | "disabled";
+  status: "active" | "paused" | "archived";
   version: number;
 };
 
