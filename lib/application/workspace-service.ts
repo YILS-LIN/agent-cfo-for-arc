@@ -3,6 +3,7 @@ import {
   buildRiskAnalysisInputHash,
   evaluatePersistentRisks,
 } from "@/lib/analytics/persistent-risk";
+import { buildPersistentWorkspaceSummary } from "@/lib/analytics/persistent-summary";
 import type { AppDatabase } from "@/lib/db/database";
 import {
   AnalysisRepository,
@@ -159,6 +160,28 @@ export class WorkspaceApplicationService {
     } = {},
   ) {
     return this.risks.list(context, filters);
+  }
+
+  async getWorkspaceSummary(context: AuthContext, input: { rangeStart: Date; rangeEnd: Date }) {
+    if (input.rangeEnd <= input.rangeStart) {
+      throw new AnalysisLimitExceededError("Summary range end must be after its start");
+    }
+    if (input.rangeEnd.getTime() - input.rangeStart.getTime() > 366 * 24 * 60 * 60 * 1_000) {
+      throw new AnalysisLimitExceededError("Summary range cannot exceed 366 days");
+    }
+    const [payments, budgets, wallets, tasks, risks] = await Promise.all([
+      this.payments.listForAnalysis(context, { from: input.rangeStart, to: input.rangeEnd }),
+      this.budgets.list(context),
+      this.wallets.list(context),
+      this.tasks.list(context),
+      this.risks.list(context),
+    ]);
+    if (payments.length > 10_000) {
+      throw new AnalysisLimitExceededError(
+        "Summary exceeds 10,000 payments; use a shorter date range",
+      );
+    }
+    return buildPersistentWorkspaceSummary({ ...input, payments, budgets, wallets, tasks, risks });
   }
 
   async analyzeRisks(

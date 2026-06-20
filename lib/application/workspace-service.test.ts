@@ -242,6 +242,49 @@ describe("WorkspaceApplicationService", () => {
     await expect(database.select().from(paymentEvents)).resolves.toHaveLength(0);
   });
 
+  it("builds tenant-scoped exact workspace aggregates", async () => {
+    const wallet = await service.createWallet(owner, walletInput(), "summary-wallet");
+    const task = await service.createTask(owner, { name: "Summary task" }, "summary-task");
+    await service.createBudget(
+      owner,
+      {
+        walletId: wallet.wallet.id,
+        taskId: task.task.id,
+        periodType: "daily",
+        periodStart: new Date("2026-06-20T00:00:00.000Z"),
+        periodEnd: new Date("2026-06-21T00:00:00.000Z"),
+        amount: "0.000004",
+      },
+      "summary-budget",
+    );
+    await service.ingestPayment(owner, {
+      walletId: wallet.wallet.id,
+      taskId: task.task.id,
+      externalId: "summary-payment",
+      providerId: "provider-1",
+      providerName: "Summary API",
+      category: "Data",
+      amount: "0.000001",
+      occurredAt: new Date("2026-06-20T12:00:00.000Z"),
+      source: "x402",
+    });
+
+    const summary = await service.getWorkspaceSummary(owner, {
+      rangeStart: new Date("2026-06-20T00:00:00.000Z"),
+      rangeEnd: new Date("2026-06-21T00:00:00.000Z"),
+    });
+
+    expect(summary.metrics).toMatchObject({
+      totalSpend: "0.000001",
+      paymentCount: 1,
+      assignedBudget: "0.000004",
+      budgetUsed: 25,
+    });
+    expect(summary.wallets).toMatchObject([{ spent: "0.000001", budgetUsed: 25 }]);
+    expect(summary.tasks).toMatchObject([{ spent: "0.000001", paymentCount: 1 }]);
+    expect(summary.providers).toMatchObject([{ name: "Summary API", spent: "0.000001" }]);
+  });
+
   it("persists deterministic risk analysis, deduplicates replays, and resolves stale signals", async () => {
     const wallet = await service.createWallet(owner, walletInput(), "risk-wallet");
     const budget = await service.createBudget(

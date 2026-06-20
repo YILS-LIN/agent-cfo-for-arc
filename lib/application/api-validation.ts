@@ -91,3 +91,13 @@ export const internalPaymentIngestRequestSchema = z.object({
   workspaceId: z.string().uuid(),
   payment: ingestPaymentRequestSchema,
 });
+
+export const workspaceSummaryQuerySchema = z
+  .object({
+    rangeStart: z.coerce.date().optional(),
+    rangeEnd: z.coerce.date().optional(),
+  })
+  .refine((input) => !input.rangeStart || !input.rangeEnd || input.rangeEnd > input.rangeStart, {
+    message: "Summary range end must be after its start",
+    path: ["rangeEnd"],
+  });
