@@ -113,6 +113,20 @@ export class WalletRepository {
     if (!wallet) throw new Error("Wallet insert returned no row");
     return wallet;
   }
+
+  async setPrimary(scope: WorkspaceScope, walletId: string) {
+    await this.database
+      .update(wallets)
+      .set({ isPrimary: false, updatedAt: new Date() })
+      .where(eq(wallets.workspaceId, scope.workspaceId));
+    const [wallet] = await this.database
+      .update(wallets)
+      .set({ isPrimary: true, updatedAt: new Date() })
+      .where(and(eq(wallets.workspaceId, scope.workspaceId), eq(wallets.id, walletId)))
+      .returning();
+    if (!wallet) throw new RepositoryNotFoundError("Wallet not found");
+    return wallet;
+  }
 }
 
 export class PaymentRepository {

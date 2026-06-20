@@ -114,6 +114,24 @@ export class WorkspaceApplicationService {
     return this.budgets.list(context);
   }
 
+  async setPrimaryWallet(context: AuthContext, walletId: string, source: MutationSource = "web") {
+    requireWriteRole(context);
+    return this.database.transaction(async (transaction) => {
+      const wallets = new WalletRepository(transaction);
+      const audits = new AuditRepository(transaction);
+      const wallet = await wallets.setPrimary(context, walletId);
+      await audits.record(context, {
+        actorUserId: context.userId,
+        action: "wallet.primary_set",
+        entityType: "wallet",
+        entityId: wallet.id,
+        source,
+        payload: { address: wallet.normalizedAddress, chainId: wallet.chainId },
+      });
+      return wallet;
+    });
+  }
+
   async createBudget(
     context: AuthContext,
     input: CreateBudgetInput,

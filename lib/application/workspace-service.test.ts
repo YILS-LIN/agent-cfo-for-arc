@@ -110,6 +110,23 @@ describe("WorkspaceApplicationService", () => {
     ).rejects.toBeInstanceOf(IdempotencyConflictError);
   });
 
+  it("atomically switches the primary wallet and records the actor", async () => {
+    const first = await service.createWallet(owner, walletInput(), "wallet-1");
+    const second = await service.createWallet(
+      owner,
+      walletInput("0x2222222222222222222222222222222222222222"),
+      "wallet-2",
+    );
+
+    const primary = await service.setPrimaryWallet(owner, second.wallet.id);
+    const records = await service.listWallets(owner);
+
+    expect(primary.isPrimary).toBe(true);
+    expect(records.find((wallet) => wallet.id === first.wallet.id)?.isPrimary).toBe(false);
+    expect(records.filter((wallet) => wallet.isPrimary)).toHaveLength(1);
+    await expect(database.select().from(auditEvents)).resolves.toHaveLength(3);
+  });
+
   it("creates and replays budgets, then updates with optimistic locking", async () => {
     const first = await service.createBudget(owner, budgetInput(), "budget-request-1");
     const replay = await service.createBudget(owner, budgetInput(), "budget-request-1");

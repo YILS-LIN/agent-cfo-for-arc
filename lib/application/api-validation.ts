@@ -19,3 +19,7 @@ export const updateBudgetRequestSchema = z.object({
   expectedVersion: z.number().int().positive(),
   amount: createBudgetInputSchema.shape.amount,
 });
+
+export const updateWalletRequestSchema = z.object({
+  isPrimary: z.literal(true),
+});
