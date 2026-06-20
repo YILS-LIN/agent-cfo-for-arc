@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   Bell,
@@ -23,6 +24,8 @@ import { ProviderMark } from "@/components/dashboard/provider-mark";
 import { AppShell } from "@/components/dashboard/app-shell";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { Button } from "@/components/ui/button";
+import { ARC_TESTNET_EXPLORER, VERIFIED_EVIDENCE_WALLET } from "@/lib/arc/evidence-config";
+import type { UsdcAmount } from "@/lib/domain/usdc";
 import { cn, compactAddress, formatCurrency, formatPercent } from "@/lib/utils";
 import type { AgentSpendSummary, TaskSummary } from "@/types/agent";
 import type { CategorySummary, PaymentEvent, RiskSeverity } from "@/types/payment";
@@ -77,9 +80,18 @@ function WalletAnalyzer({
           </div>
         </div>
         <div className="min-w-0">
-          <label className="text-sm font-bold" htmlFor="wallet">
-            Agent Wallet Address
-          </label>
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-sm font-bold" htmlFor="wallet">
+              Agent Wallet Address
+            </label>
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-blue hover:underline"
+              onClick={() => onWalletChange(VERIFIED_EVIDENCE_WALLET)}
+            >
+              Use verified Arc sample
+            </button>
+          </div>
           <div className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-line bg-white px-4 py-2.5">
             <input
               id="wallet"
@@ -117,7 +129,7 @@ function SpendFlow({
   totalSpend,
 }: {
   categories: CategorySummary[];
-  totalSpend: number;
+  totalSpend: UsdcAmount;
 }) {
   return (
     <section className="dashboard-card rounded-lg p-4">
@@ -176,18 +188,18 @@ function SpendFlow({
   );
 }
 
-function RecentPayments({ payments }: { payments: PaymentEvent[] }) {
+function RecentPayments({ payments, wallet }: { payments: PaymentEvent[]; wallet: string }) {
   return (
     <section className="dashboard-card overflow-hidden rounded-lg p-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-base font-bold">Recent Payments</h2>
-        <button
+        <Link
           className="inline-flex items-center gap-1 text-xs font-semibold text-blue"
-          type="button"
+          href={`/spend?wallet=${encodeURIComponent(wallet)}`}
         >
           View all payments
           <ChevronRight className="size-4" />
-        </button>
+        </Link>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] border-collapse text-left text-sm">
@@ -197,6 +209,7 @@ function RecentPayments({ payments }: { payments: PaymentEvent[] }) {
               <th className="pb-3 font-semibold">Category</th>
               <th className="pb-3 font-semibold">Task</th>
               <th className="pb-3 text-right font-semibold">Amount (USDC)</th>
+              <th className="pb-3 text-right font-semibold">Evidence</th>
               <th className="pb-3 text-right font-semibold">Time</th>
               <th className="pb-3 text-right font-semibold">Status</th>
             </tr>
@@ -217,6 +230,20 @@ function RecentPayments({ payments }: { payments: PaymentEvent[] }) {
                 </td>
                 <td className="max-w-56 truncate py-1.5 text-muted">{payment.taskName}</td>
                 <td className="py-1.5 text-right font-medium">{formatCurrency(payment.amount)}</td>
+                <td className="py-1.5 text-right text-xs">
+                  {payment.source === "demo" ? (
+                    <span className="text-muted">Demo fixture</span>
+                  ) : (
+                    <a
+                      className="font-semibold text-blue hover:underline"
+                      href={`${ARC_TESTNET_EXPLORER}/tx/${payment.txHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Arc tx ↗
+                    </a>
+                  )}
+                </td>
                 <td className="py-1.5 text-right text-xs text-muted">
                   {new Intl.DateTimeFormat("en-US", {
                     month: "short",
@@ -378,7 +405,11 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
   const [summary, setSummary] = useState(initialSummary);
   const [wallet, setWallet] = useState(initialSummary.profile.wallet);
   const [isLoading, setIsLoading] = useState(false);
-  const [status, setStatus] = useState("Ready for Arc payment telemetry.");
+  const [status, setStatus] = useState(
+    initialSummary.analysis.isLive
+      ? "LIVE EVIDENCE · Circle Gateway settlement verified against Arc Testnet."
+      : "DEMO · Deterministic local payment facts; no live Arc sync.",
+  );
 
   const metrics = useMemo(
     () => [
@@ -412,7 +443,7 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
 
   async function analyzeWallet() {
     setIsLoading(true);
-    setStatus("Fetching Arc x402 payment events...");
+    setStatus("Checking the configured analysis adapter...");
 
     try {
       const response = await fetch(`/api/agents/${encodeURIComponent(wallet)}/summary`, {
@@ -420,12 +451,17 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
       });
 
       if (!response.ok) {
-        throw new Error("Unable to analyze wallet.");
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error ?? "Unable to analyze wallet.");
       }
 
       const nextSummary = (await response.json()) as AgentSpendSummary;
       setSummary(nextSummary);
-      setStatus(`Analyzed ${compactAddress(nextSummary.profile.wallet)} with demo Arc adapter.`);
+      setStatus(
+        nextSummary.analysis.isLive
+          ? `LIVE EVIDENCE · Circle Gateway + Arc Testnet verified at ${new Date(nextSummary.analysis.calculatedAt).toLocaleTimeString()}.`
+          : `DEMO · Recalculated ${compactAddress(nextSummary.profile.wallet)} from local fixtures.`,
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to analyze wallet.");
     } finally {
@@ -463,7 +499,7 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
   return (
     <AppShell
       title="Agent CFO for Arc"
-      description="Real-time spend intelligence for autonomous AI agents"
+      description="Deterministic spend-analysis demo · live Arc adapter pending"
       owner={summary.profile.owner}
       actions={
         <Button disabled={isLoading} onClick={runDemoAgent} variant="soft">
@@ -493,7 +529,7 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
           </div>
 
           <SpendFlow categories={summary.categories} totalSpend={summary.metrics.totalSpend} />
-          <RecentPayments payments={summary.payments} />
+          <RecentPayments payments={summary.payments} wallet={summary.profile.wallet} />
         </div>
 
         <aside className="grid content-start gap-4">

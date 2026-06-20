@@ -36,7 +36,7 @@ function Toggle({
 }
 
 export function SettingsPage({ summary }: { summary: AgentSpendSummary }) {
-  const [saved, setSaved] = useState("Settings are synchronized with this browser.");
+  const [saved, setSaved] = useState("Demo settings are stored in this browser only.");
   const [notifications, setNotifications] = useState({
     highRisk: true,
     budget: true,
@@ -127,7 +127,7 @@ export function SettingsPage({ summary }: { summary: AgentSpendSummary }) {
         </SectionCard>
         <SectionCard
           title="Payment security"
-          description="Controls applied before x402 authorization."
+          description="Local policy simulation; no x402 authorization is currently controlled."
           action={<ShieldCheck className="size-5 text-green" />}
         >
           <Toggle

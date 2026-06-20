@@ -11,6 +11,7 @@ import {
   inputClassName,
 } from "@/components/dashboard/page-ui";
 import { Button } from "@/components/ui/button";
+import { usdcToNumber } from "@/lib/domain/usdc";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import type { AgentSpendSummary, TaskSummary } from "@/types/agent";
 
@@ -62,7 +63,7 @@ export function TasksPage({ summary }: { summary: AgentSpendSummary }) {
         <SummaryStat
           label="Running now"
           value={running.toString()}
-          detail="Payments permitted by policy"
+          detail="Local demo execution state"
           icon={Play}
           tone="green"
         />
@@ -77,7 +78,7 @@ export function TasksPage({ summary }: { summary: AgentSpendSummary }) {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <SectionCard
           title="Task registry"
-          description="Pause a task to block new paid resource requests."
+          description="Simulate task lifecycle controls; no external agent is controlled."
         >
           <div className="mb-4 grid gap-2 md:grid-cols-[minmax(220px,1fr)_160px]">
             <label className="relative">
@@ -103,7 +104,7 @@ export function TasksPage({ summary }: { summary: AgentSpendSummary }) {
           <div className="grid gap-2">
             {tasks.map((task) => {
               const state = states[task.id];
-              const used = (task.amount / task.budget) * 100;
+              const used = (usdcToNumber(task.amount) / usdcToNumber(task.budget)) * 100;
               return (
                 <article
                   key={task.id}

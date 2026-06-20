@@ -7,6 +7,8 @@ import { AppShell } from "@/components/dashboard/app-shell";
 import { ProviderMark } from "@/components/dashboard/provider-mark";
 import { SectionCard, SummaryStat, inputClassName } from "@/components/dashboard/page-ui";
 import { Button } from "@/components/ui/button";
+import { ARC_TESTNET_EXPLORER, CIRCLE_GATEWAY_TESTNET_API } from "@/lib/arc/evidence-config";
+import { compareUsdc, sumUsdc } from "@/lib/domain/usdc";
 import { formatCurrency } from "@/lib/utils";
 import type { AgentSpendSummary } from "@/types/agent";
 import type { PaymentEvent, SpendCategory } from "@/types/payment";
@@ -35,8 +37,11 @@ export function SpendPage({
     );
   }, [category, payments, query, status]);
 
-  const visibleSpend = filtered.reduce((total, payment) => total + payment.amount, 0);
-  const largest = Math.max(...filtered.map((payment) => payment.amount), 0);
+  const visibleSpend = sumUsdc(filtered.map((payment) => payment.amount));
+  const largest = filtered.reduce(
+    (current, payment) => (compareUsdc(payment.amount, current) > 0 ? payment.amount : current),
+    "0",
+  );
 
   function exportCsv() {
     const header = [
@@ -98,7 +103,7 @@ export function SpendPage({
         <SummaryStat
           label="Ledger coverage"
           value="100%"
-          detail="Arc settlement events reconciled"
+          detail="Deterministic demo events reconciled"
           icon={ReceiptText}
           tone="green"
         />
@@ -143,7 +148,7 @@ export function SpendPage({
           </select>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-left text-sm">
+          <table className="w-full min-w-[1080px] text-left text-sm">
             <thead>
               <tr className="border-b border-line text-xs text-muted">
                 <th className="pb-3 font-semibold">Provider</th>
@@ -151,6 +156,7 @@ export function SpendPage({
                 <th className="pb-3 font-semibold">Category</th>
                 <th className="pb-3 font-semibold">Memo</th>
                 <th className="pb-3 text-right font-semibold">Amount</th>
+                <th className="pb-3 text-right font-semibold">Evidence</th>
                 <th className="pb-3 text-right font-semibold">Settled</th>
               </tr>
             </thead>
@@ -172,6 +178,32 @@ export function SpendPage({
                   <td className="max-w-64 truncate py-3 text-muted">{payment.memo}</td>
                   <td className="py-3 text-right font-semibold">
                     {formatCurrency(payment.amount)}
+                  </td>
+                  <td className="py-3 text-right text-xs">
+                    {payment.source === "demo" ? (
+                      <span className="text-muted">Demo fixture</span>
+                    ) : (
+                      <span className="inline-flex gap-2">
+                        {payment.rawReference && (
+                          <a
+                            className="font-semibold text-blue hover:underline"
+                            href={`${CIRCLE_GATEWAY_TESTNET_API}/v1/x402/transfers/${payment.rawReference}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Circle ↗
+                          </a>
+                        )}
+                        <a
+                          className="font-semibold text-blue hover:underline"
+                          href={`${ARC_TESTNET_EXPLORER}/tx/${payment.txHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Arc ↗
+                        </a>
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 text-right text-xs text-muted">
                     {new Intl.DateTimeFormat("en-US", {

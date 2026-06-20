@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { demoArcAdapter } from "@/lib/arc/client";
+import { arcSpendAdapter, LiveArcAdapterUnavailableError } from "@/lib/arc/client";
 
 type RouteContext = {
   params: Promise<{
@@ -10,11 +10,22 @@ type RouteContext = {
 
 export async function GET(_request: Request, context: RouteContext) {
   const { wallet } = await context.params;
-  const summary = await demoArcAdapter.getAgentSummary(decodeURIComponent(wallet));
+  try {
+    const summary = await arcSpendAdapter.getAgentSummary(decodeURIComponent(wallet));
 
-  return NextResponse.json(summary, {
-    headers: {
-      "Cache-Control": "no-store",
-    },
-  });
+    return NextResponse.json(summary, {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (error) {
+    if (error instanceof LiveArcAdapterUnavailableError) {
+      return NextResponse.json(
+        { error: error.message, code: "LIVE_ARC_ADAPTER_UNAVAILABLE" },
+        { status: 422 },
+      );
+    }
+
+    throw error;
+  }
 }

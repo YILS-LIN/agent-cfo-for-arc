@@ -11,6 +11,7 @@ import {
   inputClassName,
 } from "@/components/dashboard/page-ui";
 import { Button } from "@/components/ui/button";
+import { usdcToNumber } from "@/lib/domain/usdc";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import type { AgentSpendSummary } from "@/types/agent";
 
@@ -20,17 +21,19 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
   );
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [hardStop, setHardStop] = useState(true);
-  const [policyMessage, setPolicyMessage] = useState("Policy last reviewed today.");
+  const [monitoringEnabled, setMonitoringEnabled] = useState(true);
+  const [policyMessage, setPolicyMessage] = useState(
+    "Demo monitoring rules are local to this page.",
+  );
   const totalBudget = useMemo(
     () => Object.values(budgets).reduce((total, value) => total + Number(value), 0),
     [budgets],
   );
-  const used = (summary.metrics.totalSpend / totalBudget) * 100;
+  const used = (usdcToNumber(summary.metrics.totalSpend) / totalBudget) * 100;
 
   function saveBudget(id: string) {
     const next = Number(draft);
-    if (Number.isFinite(next) && next > 0) setBudgets((current) => ({ ...current, [id]: next }));
+    if (Number.isFinite(next) && next > 0) setBudgets((current) => ({ ...current, [id]: draft }));
     setEditing(null);
   }
 
@@ -55,11 +58,11 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
           tone={used > 80 ? "orange" : "green"}
         />
         <SummaryStat
-          label="Hard-stop policy"
-          value={hardStop ? "Enabled" : "Disabled"}
-          detail="Blocks payments above task limit"
+          label="Monitoring policy"
+          value={monitoringEnabled ? "Enabled" : "Disabled"}
+          detail="Warns only; does not block onchain payments"
           icon={ShieldCheck}
-          tone={hardStop ? "green" : "orange"}
+          tone={monitoringEnabled ? "green" : "orange"}
         />
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px]">
@@ -81,7 +84,7 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
               <tbody>
                 {summary.tasks.map((task) => {
                   const limit = budgets[task.id] ?? task.budget;
-                  const percent = (task.amount / limit) * 100;
+                  const percent = (usdcToNumber(task.amount) / usdcToNumber(limit)) * 100;
                   const tone = percent >= 100 ? "red" : percent >= 80 ? "orange" : "blue";
                   return (
                     <tr key={task.id} className="border-b border-line/70 last:border-0">
@@ -140,15 +143,15 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
           <div className="grid gap-4">
             <label className="flex items-center justify-between gap-4 rounded-lg border border-line bg-white p-3">
               <span>
-                <span className="block text-sm font-semibold">Hard stop at 100%</span>
+                <span className="block text-sm font-semibold">Monitor at 100%</span>
                 <span className="mt-1 block text-xs text-muted">
-                  Reject payments that exceed the task limit.
+                  Raise a risk signal when observed spend exceeds the limit.
                 </span>
               </span>
               <input
                 type="checkbox"
-                checked={hardStop}
-                onChange={(event) => setHardStop(event.target.checked)}
+                checked={monitoringEnabled}
+                onChange={(event) => setMonitoringEnabled(event.target.checked)}
                 className="size-5 accent-blue"
               />
             </label>
@@ -175,7 +178,9 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
             </label>
             <Button
               onClick={() =>
-                setPolicyMessage("Payment policy saved and applied to future authorizations.")
+                setPolicyMessage(
+                  "Demo monitoring policy saved locally; no onchain enforcement is active.",
+                )
               }
             >
               Save policy

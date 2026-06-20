@@ -246,6 +246,8 @@ Agent CFO 面向 Canteen × Circle × Arc 的 Lepton Agents Hackathon 构建。
 - Circle CLI / Agent Stack：管理 Agent 钱包与 x402-compatible payment。
 - Gateway/Nanopayments：读取批量 USDC nanopayment telemetry。
 
+> **真实性说明（2026-06-20）**：默认体验使用确定性 Demo 数据；页面同时提供一个公开可验证样本，通过 Circle Gateway API 与 Arc Testnet RPC 读取两笔真实 x402 settlement。系统不会把其他任意地址伪装成已完成链上分析；通用钱包同步与持久化仍在开发中。Monitoring Budget 只生成分析和提醒，不会阻止链上交易。
+
 ## 技术栈
 
 - Next.js App Router
@@ -278,13 +280,14 @@ pnpm dev
 ```bash
 pnpm typecheck
 pnpm lint
+pnpm test
 pnpm build
 ```
 
 Demo 操作：
 
-- 粘贴或编辑 Agent wallet address。
-- 点击 **Analyze Wallet**，通过 `/api/agents/[wallet]/summary` 获取花销摘要。
+- 使用页面预置的 Demo wallet address，或点击 **Use verified Arc sample** 填入公开证据钱包。
+- 点击 **Analyze Wallet**，通过 `/api/agents/[wallet]/summary` 计算 Demo 或核验 Circle Gateway + Arc Testnet 数据；其他地址会明确提示通用 Live Adapter 尚未配置。
 - 点击 **Run Demo Agent**，模拟一个研究 Agent 生成 x402 风格支付事件。
 - 查看 KPI、Spend Flow、Recent Payments、风险信号、任务摘要和 AI Insight。
 
@@ -293,10 +296,10 @@ Demo 操作：
 - **Overview**：钱包分析、KPI、支出流、风险和 AI CFO 建议。
 - **Wallets**：连接钱包、切换主钱包、复制地址并进入分析。
 - **Spend**：检索和筛选完整支付账本，导出 CSV。
-- **Providers**：查看服务商集中度，批准或阻止未来付款。
-- **Budgets**：编辑任务预算，配置硬停止和付款审查阈值。
+- **Providers**：查看服务商集中度，并模拟本地 allow/flag 状态。
+- **Budgets**：编辑 Demo 任务预算和监控阈值，不执行链上强制限制。
 - **Risks**：按严重度筛选，将信号推进到调查或解决状态。
-- **Tasks**：查看任务成本归因，暂停、恢复和重启 Agent 任务。
+- **Tasks**：查看任务成本归因并模拟任务状态，不控制外部 Agent。
 - **Settings**：配置通知、安全策略、Webhook 和数据保留，并导出设置。
 
 ## 项目结构
@@ -312,6 +315,7 @@ Demo 操作：
 │   ├── analytics/        # 支出分类、预算、任务和风险逻辑
 │   ├── arc/              # demo Arc/Circle 集成 adapter 边界
 │   ├── demo/             # 黑客松 demo 支付事件流
+│   ├── domain/           # 精确 USDC 金额与领域规则
 │   ├── reports/          # CFO 风格报告生成
 │   └── utils.ts
 ├── types/                # 共享领域类型
@@ -329,12 +333,15 @@ Demo 操作：
 - [x] 基础异常与低效支出检测
 - [x] 自然语言花销报告
 - [x] 使用 x402 风格付费服务调用的 Demo 研究 Agent
-- [x] 多钱包管理和主钱包切换
+- [x] 多钱包管理和主钱包切换 UI Demo
 - [x] 完整支付账本筛选与 CSV 导出
-- [x] 服务商准入、任务预算和支付 guardrail
-- [x] 风险调查/解决工作流和任务启停控制
-- [x] 通知、安全、Webhook 和数据保留设置
+- [x] 服务商准入、任务预算和支付 guardrail UI Demo
+- [x] 风险调查/解决工作流和任务启停 UI Demo
+- [x] 通知、安全、Webhook 和数据保留设置 UI Demo
+- [x] 精确 USDC 对账与自动化测试
+- [x] Circle Gateway settlement + Arc Testnet 批次交易公开证据
 - [ ] 真实 Arc/Circle adapter
+- [ ] 钱包、支付与预算持久化
 - [ ] 可导出的 CFO 报告
 - [ ] 多 Agent 组合视图
 

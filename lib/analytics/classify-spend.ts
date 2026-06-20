@@ -1,19 +1,17 @@
+import { formatUsdcUnits, parseUsdc, sumUsdc } from "@/lib/domain/usdc";
 import type { CategorySummary, PaymentEvent, ProviderSummary } from "@/types/payment";
 
-function roundCurrency(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
-function share(amount: number, total: number) {
-  if (total === 0) {
+function share(amount: string, total: string) {
+  const totalUnits = parseUsdc(total);
+  if (totalUnits === BigInt(0)) {
     return 0;
   }
 
-  return Math.round((amount / total) * 1000) / 10;
+  return Number((parseUsdc(amount) * BigInt(1000)) / totalUnits) / 10;
 }
 
 export function getTotalSpend(payments: PaymentEvent[]) {
-  return roundCurrency(payments.reduce((sum, payment) => sum + payment.amount, 0));
+  return sumUsdc(payments.map((payment) => payment.amount));
 }
 
 export function summarizeProviders(payments: PaymentEvent[]): ProviderSummary[] {
@@ -24,18 +22,18 @@ export function summarizeProviders(payments: PaymentEvent[]): ProviderSummary[] 
     const current = providers.get(payment.provider) ?? {
       provider: payment.provider,
       providerLogo: payment.providerLogo,
-      amount: 0,
+      amount: "0",
       paymentCount: 0,
       share: 0,
     };
 
-    current.amount = roundCurrency(current.amount + payment.amount);
+    current.amount = formatUsdcUnits(parseUsdc(current.amount) + parseUsdc(payment.amount));
     current.paymentCount += 1;
     current.share = share(current.amount, total);
     providers.set(payment.provider, current);
   }
 
-  return [...providers.values()].sort((a, b) => b.amount - a.amount);
+  return [...providers.values()].sort((a, b) => Number(parseUsdc(b.amount) - parseUsdc(a.amount)));
 }
 
 export function summarizeCategories(payments: PaymentEvent[]): CategorySummary[] {
@@ -45,18 +43,18 @@ export function summarizeCategories(payments: PaymentEvent[]): CategorySummary[]
   for (const payment of payments) {
     const current = categories.get(payment.category) ?? {
       category: payment.category,
-      amount: 0,
+      amount: "0",
       paymentCount: 0,
       share: 0,
     };
 
-    current.amount = roundCurrency(current.amount + payment.amount);
+    current.amount = formatUsdcUnits(parseUsdc(current.amount) + parseUsdc(payment.amount));
     current.paymentCount += 1;
     current.share = share(current.amount, total);
     categories.set(payment.category, current);
   }
 
-  return [...categories.values()].sort((a, b) => b.amount - a.amount);
+  return [...categories.values()].sort((a, b) => Number(parseUsdc(b.amount) - parseUsdc(a.amount)));
 }
 
 export function getRecentPayments(payments: PaymentEvent[], limit = 6) {

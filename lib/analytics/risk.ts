@@ -6,7 +6,7 @@ export function detectRiskSignals(payments: PaymentEvent[], budgetUsed: number):
   const repeatedMemos = payments.filter((payment) =>
     payment.memo.toLowerCase().includes("repeated dataset"),
   );
-  const expensivePayments = payments.filter((payment) => payment.amount > 1500);
+  const expensivePayments = payments.filter((payment) => compareUsdc(payment.amount, "1500") > 0);
   const unusualProviders = new Set(
     payments
       .filter((payment) => payment.provider === "DeepInfra Labs")
@@ -17,7 +17,7 @@ export function detectRiskSignals(payments: PaymentEvent[], budgetUsed: number):
     risks.push({
       id: "risk_repeated_dataset",
       title: "Repeated dataset purchases",
-      description: `Detected ${repeatedMemos.length + 5} similar purchases`,
+      description: `Detected ${repeatedMemos.length} matching purchases in the current dataset`,
       severity: "High",
       category: "repeat",
     });
@@ -27,7 +27,7 @@ export function detectRiskSignals(payments: PaymentEvent[], budgetUsed: number):
     risks.push({
       id: "risk_price_spike",
       title: "Price spike detected",
-      description: "Pinecone - 28% higher than usual",
+      description: `${expensivePayments.length} payments exceeded the deterministic 1,500 USDC demo threshold`,
       severity: "Medium",
       category: "spike",
     });
@@ -67,3 +67,4 @@ export function getRiskLevel(risks: RiskSignal[]): "Low" | "Medium" | "High" {
 
   return "Low";
 }
+import { compareUsdc } from "@/lib/domain/usdc";

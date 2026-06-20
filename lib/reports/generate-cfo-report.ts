@@ -3,7 +3,7 @@ import type { CategorySummary, ProviderSummary, RiskSignal } from "@/types/payme
 import type { CfoReport } from "@/types/report";
 
 type GenerateCfoReportInput = {
-  totalSpend: number;
+  totalSpend: UsdcAmount;
   budgetUsed: number;
   providers: ProviderSummary[];
   categories: CategorySummary[];
@@ -24,7 +24,7 @@ export function generateCfoReport(input: GenerateCfoReportInput): CfoReport {
     headline: repeatedRisk
       ? "This agent overspent on repeated dataset purchases."
       : "This agent stayed inside budget with moderate provider concentration.",
-    summary: `The agent spent ${input.totalSpend.toLocaleString("en-US", {
+    summary: `The agent spent ${usdcToNumber(input.totalSpend).toLocaleString("en-US", {
       style: "currency",
       currency: "USD",
     })} across ${input.providers.length} providers. Most spend went to ${topCategory?.category ?? "paid services"}, with ${topProvider?.provider ?? "the top provider"} receiving the largest share. The highest-cost task was ${topTask?.name ?? "the current research task"}.`,
@@ -34,3 +34,4 @@ export function generateCfoReport(input: GenerateCfoReportInput): CfoReport {
     projectedSavingsPercent: savings,
   };
 }
+import { usdcToNumber, type UsdcAmount } from "@/lib/domain/usdc";

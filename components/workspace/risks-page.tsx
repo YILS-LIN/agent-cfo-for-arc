@@ -111,7 +111,7 @@ export function RisksPage({ summary }: { summary: AgentSpendSummary }) {
                   </div>
                   <p className="mt-1 text-sm text-muted">{risk.description}</p>
                   <p className="mt-2 text-xs text-muted">
-                    Rule: {risk.category} · Detected from Arc settlement telemetry
+                    Rule: {risk.category} · Detected from deterministic demo facts
                   </p>
                 </div>
                 <select

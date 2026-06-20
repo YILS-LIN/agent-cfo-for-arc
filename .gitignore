@@ -9,3 +9,4 @@ build
 !.env.example
 coverage
 *.tsbuildinfo
+docs/

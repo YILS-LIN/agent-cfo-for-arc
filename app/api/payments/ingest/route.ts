@@ -6,11 +6,11 @@ import type { PaymentEvent } from "@/types/payment";
 export async function POST(request: Request) {
   const payment = (await request.json()) as PaymentEvent;
 
-  if (!payment?.id || !payment?.wallet || typeof payment.amount !== "number") {
+  if (!payment?.id || !payment?.wallet || typeof payment.amount !== "string") {
     return NextResponse.json({ error: "Invalid payment payload." }, { status: 400 });
   }
 
   const result = await demoArcAdapter.ingestPayment(payment);
 
-  return NextResponse.json(result, { status: 202 });
+  return NextResponse.json(result, { status: 501 });
 }

@@ -24,9 +24,9 @@ function HeaderControls({ owner }: { owner: string }) {
         <select
           className="bg-transparent outline-none"
           aria-label="Arc network"
-          defaultValue="Arc Mainnet"
+          defaultValue="Arc Testnet · Demo"
         >
-          <option>Arc Mainnet</option>
+          <option>Arc Testnet · Demo</option>
           <option>Arc Testnet</option>
         </select>
       </label>

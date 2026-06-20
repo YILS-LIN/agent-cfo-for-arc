@@ -103,7 +103,7 @@ export function ProvidersPage({ summary }: { summary: AgentSpendSummary }) {
                     className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold ${isApproved ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}
                   >
                     <CheckCircle2 className="size-3" />
-                    {isApproved ? "Approved" : "Blocked"}
+                    {isApproved ? "Allowed in demo" : "Flagged in demo"}
                   </span>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
@@ -127,7 +127,7 @@ export function ProvidersPage({ summary }: { summary: AgentSpendSummary }) {
                     Trust policy: {isApproved ? "payments allowed" : "manual review required"}
                   </p>
                   <Button variant="ghost" onClick={() => toggleApproval(provider.provider)}>
-                    {isApproved ? "Block" : "Approve"}
+                    {isApproved ? "Flag" : "Allow"}
                   </Button>
                 </div>
               </article>

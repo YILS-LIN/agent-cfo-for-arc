@@ -5,12 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: number, maximumFractionDigits = 2) {
+export function formatCurrency(value: number | string, maximumFractionDigits = 2) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits,
-  }).format(value);
+  }).format(typeof value === "string" ? Number.parseFloat(value) : value);
 }
 
 export function formatPercent(value: number, maximumFractionDigits = 1) {

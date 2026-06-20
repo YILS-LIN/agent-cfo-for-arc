@@ -12,6 +12,7 @@ import {
   inputClassName,
 } from "@/components/dashboard/page-ui";
 import { Button } from "@/components/ui/button";
+import { usdcToNumber, type UsdcAmount } from "@/lib/domain/usdc";
 import { cn, compactAddress, formatCurrency, formatPercent } from "@/lib/utils";
 import type { AgentSpendSummary } from "@/types/agent";
 
@@ -19,8 +20,8 @@ type WalletRecord = {
   address: string;
   label: string;
   network: string;
-  budget: number;
-  spent: number;
+  budget: UsdcAmount;
+  spent: UsdcAmount;
   primary: boolean;
 };
 
@@ -37,24 +38,24 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
     {
       address: "0x4a91d8e8b2017c63b534aa89d4f213729e2fd702",
       label: "Procurement Agent",
-      network: "Arc Mainnet",
-      budget: 12000,
-      spent: 4872.15,
+      network: "Arc Testnet · Demo",
+      budget: "12000",
+      spent: "4872.15",
       primary: false,
     },
     {
       address: "0x70f7ca8d182eb130d43bd10d79a61ec70336f02e",
       label: "Sandbox Agent",
       network: "Arc Testnet",
-      budget: 5000,
-      spent: 934.2,
+      budget: "5000",
+      spent: "934.2",
       primary: false,
     },
   ]);
   const [showForm, setShowForm] = useState(false);
   const [label, setLabel] = useState("");
   const [address, setAddress] = useState("");
-  const [message, setMessage] = useState("All wallet telemetry is synchronized.");
+  const [message, setMessage] = useState("Demo wallet records are held in browser memory only.");
 
   function addWallet() {
     if (!label.trim() || !address.trim().startsWith("0x")) {
@@ -67,25 +68,25 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
       {
         address: address.trim(),
         label: label.trim(),
-        network: "Arc Mainnet",
-        budget: 10000,
-        spent: 0,
+        network: "Arc Testnet · Demo",
+        budget: "10000",
+        spent: "0",
         primary: false,
       },
     ]);
     setLabel("");
     setAddress("");
     setShowForm(false);
-    setMessage("Wallet added and queued for Arc telemetry sync.");
+    setMessage("Demo wallet added locally; live Arc synchronization is not configured.");
   }
 
-  const totalBudget = wallets.reduce((total, wallet) => total + wallet.budget, 0);
-  const totalSpent = wallets.reduce((total, wallet) => total + wallet.spent, 0);
+  const totalBudget = wallets.reduce((total, wallet) => total + usdcToNumber(wallet.budget), 0);
+  const totalSpent = wallets.reduce((total, wallet) => total + usdcToNumber(wallet.spent), 0);
 
   return (
     <AppShell
       title="Agent Wallets"
-      description="Manage Arc accounts, budgets, and payment telemetry"
+      description="Explore local demo wallets; persistence and live telemetry are pending"
       owner={summary.profile.owner}
       actions={
         <Button onClick={() => setShowForm(true)}>
@@ -95,9 +96,9 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
     >
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryStat
-          label="Connected wallets"
+          label="Demo wallets"
           value={wallets.length.toString()}
-          detail="2 mainnet, 1 testnet"
+          detail="Deterministic demo records"
           icon={Wallet}
         />
         <SummaryStat
@@ -147,13 +148,13 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
       )}
 
       <SectionCard
-        title="Connected wallets"
+        title="Demo wallets"
         description={message}
         action={
           <button
             type="button"
             className="text-xs font-semibold text-blue"
-            onClick={() => setMessage("Wallet telemetry refreshed just now.")}
+            onClick={() => setMessage("Demo records refreshed from the local fixture.")}
           >
             Refresh all
           </button>
@@ -161,7 +162,8 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
       >
         <div className="grid gap-3">
           {wallets.map((wallet) => {
-            const used = wallet.budget > 0 ? (wallet.spent / wallet.budget) * 100 : 0;
+            const budget = usdcToNumber(wallet.budget);
+            const used = budget > 0 ? (usdcToNumber(wallet.spent) / budget) * 100 : 0;
             return (
               <article
                 key={wallet.address}

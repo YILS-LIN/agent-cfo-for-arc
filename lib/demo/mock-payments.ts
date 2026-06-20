@@ -6,8 +6,8 @@ export const DEMO_WALLET = "0x8f3a2c1d9b6e7f4a8c2d6e9b7a1c9d8e5f2a3b1c";
 export const demoProfile: AgentProfile = {
   wallet: DEMO_WALLET,
   displayName: "Research CFO Agent",
-  network: "Arc Mainnet",
-  budget: 35886.58,
+  network: "Arc Testnet",
+  budget: "35886.58",
   owner: "Alex Morgan",
   dateRange: {
     from: "2025-05-12",
@@ -51,7 +51,7 @@ const providers = {
 function payment(
   index: number,
   providerKey: keyof typeof providers,
-  amount: number,
+  amount: number | string,
   category: PaymentEvent["category"],
   taskId: string,
   taskName: string,
@@ -70,12 +70,15 @@ function payment(
     category,
     taskId,
     taskName,
-    amount,
+    amount: String(amount),
     currency: "USDC",
     timestamp,
     status: "completed",
     memo,
     x402Resource: `/x402/${category.toLowerCase().replaceAll(" ", "-")}/${index}`,
+    chainId: 5_042_002,
+    source: "demo",
+    rawReference: `demo-fixture:${index}`,
   };
 }
 

@@ -1,3 +1,4 @@
+import type { UsdcAmount } from "@/lib/domain/usdc";
 import type { CategorySummary, PaymentEvent, ProviderSummary, RiskSignal } from "@/types/payment";
 import type { CfoReport } from "@/types/report";
 
@@ -5,7 +6,7 @@ export type AgentProfile = {
   wallet: string;
   displayName: string;
   network: "Arc Mainnet" | "Arc Testnet";
-  budget: number;
+  budget: UsdcAmount;
   owner: string;
   dateRange: {
     from: string;
@@ -16,23 +17,29 @@ export type AgentProfile = {
 export type TaskSummary = {
   id: string;
   name: string;
-  amount: number;
+  amount: UsdcAmount;
   share: number;
-  budget: number;
+  budget: UsdcAmount;
   paymentCount: number;
   status: "Within budget" | "Near limit" | "Over budget";
 };
 
 export type AgentMetrics = {
-  totalSpend: number;
+  totalSpend: UsdcAmount;
   paymentCount: number;
-  averagePayment: number;
+  averagePayment: UsdcAmount;
   budgetUsed: number;
   topCategory: string;
   riskLevel: "Low" | "Medium" | "High";
 };
 
 export type AgentSpendSummary = {
+  analysis: {
+    source: "demo" | "arc";
+    isLive: boolean;
+    calculatedAt: string;
+    version: string;
+  };
   profile: AgentProfile;
   metrics: AgentMetrics;
   payments: PaymentEvent[];

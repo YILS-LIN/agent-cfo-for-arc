@@ -247,6 +247,8 @@ The current MVP uses a deterministic demo adapter so judges can click through th
 - Circle CLI / Agent Stack for agent wallets and x402-compatible payments.
 - Gateway/Nanopayments for batched USDC nanopayment telemetry.
 
+> **Truthfulness note (2026-06-20):** the default experience uses deterministic demo data. A separate public evidence sample reads two real x402 settlements from Circle Gateway and verifies their batch transaction through Arc Testnet RPC. The app does not present other arbitrary addresses as completed onchain analyses; general wallet sync and persistence remain in development. Monitoring budgets produce analysis and warnings only—they do not block onchain transactions.
+
 ## Tech Stack
 
 - Next.js App Router
@@ -279,13 +281,14 @@ Useful validation commands:
 ```bash
 pnpm typecheck
 pnpm lint
+pnpm test
 pnpm build
 ```
 
 Demo actions:
 
-- Paste or edit the Agent wallet address.
-- Click **Analyze Wallet** to fetch a spend summary through `/api/agents/[wallet]/summary`.
+- Use the prefilled demo wallet or click **Use verified Arc sample** to load the public evidence wallet.
+- Click **Analyze Wallet** to compute demo data or verify Circle Gateway + Arc Testnet evidence; other addresses explicitly report that general live sync is unavailable.
 - Click **Run Demo Agent** to simulate a research agent generating x402-style payment events.
 - Review the KPI cards, spend flow, recent payments, risk signals, task summary, and AI insight.
 
@@ -294,10 +297,10 @@ Complete workspace pages:
 - **Overview**: wallet analysis, KPIs, spend flow, risks, and AI CFO recommendations.
 - **Wallets**: connect wallets, switch the primary wallet, copy addresses, and analyze an account.
 - **Spend**: search and filter the full payment ledger, then export CSV.
-- **Providers**: inspect concentration and approve or block future payments.
-- **Budgets**: edit task limits and configure hard stops and review thresholds.
+- **Providers**: inspect concentration and simulate local allow/flag state.
+- **Budgets**: edit demo task limits and monitoring thresholds without onchain enforcement.
 - **Risks**: filter by severity and move signals through investigation and resolution.
-- **Tasks**: inspect cost attribution and pause, resume, or restart agent tasks.
+- **Tasks**: inspect cost attribution and simulate task state without controlling an external agent.
 - **Settings**: configure alerts, security, webhooks, retention, and exportable settings.
 
 ## Project Structure
@@ -313,6 +316,7 @@ Complete workspace pages:
 │   ├── analytics/        # Spend classification, budget, task, and risk logic
 │   ├── arc/              # Adapter boundary for demo Arc/Circle integration
 │   ├── demo/             # Deterministic hackathon demo payment stream
+│   ├── domain/           # Exact USDC amount and domain rules
 │   ├── reports/          # CFO-style report generation
 │   └── utils.ts
 ├── types/                # Shared domain types
@@ -330,12 +334,15 @@ Complete workspace pages:
 - [x] Basic anomaly and inefficiency detection
 - [x] Natural language spend report
 - [x] Demo research agent using x402-style paid service calls
-- [x] Multi-wallet management and primary-wallet switching
+- [x] Multi-wallet management and primary-wallet switching UI demo
 - [x] Full ledger filtering and CSV export
-- [x] Provider approval, task budgets, and payment guardrails
-- [x] Risk investigation workflow and task lifecycle controls
-- [x] Notification, security, webhook, and retention settings
+- [x] Provider approval, task budgets, and payment guardrails UI demo
+- [x] Risk investigation workflow and task lifecycle UI demo
+- [x] Notification, security, webhook, and retention settings UI demo
+- [x] Exact USDC reconciliation and automated tests
+- [x] Public Circle Gateway settlement + Arc Testnet batch evidence
 - [ ] Production Arc/Circle adapter
+- [ ] Wallet, payment, and budget persistence
 - [ ] Exportable CFO report
 - [ ] Multi-agent portfolio view
 
