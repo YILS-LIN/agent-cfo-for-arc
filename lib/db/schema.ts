@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -167,6 +168,7 @@ export const wallets = pgTable(
       table.chainId,
       table.normalizedAddress,
     ),
+    uniqueIndex("wallet_workspace_id_unique").on(table.workspaceId, table.id),
     index("wallet_workspace_idx").on(table.workspaceId),
     check(
       "wallet_normalized_address_lowercase",
@@ -219,7 +221,13 @@ export const tasks = pgTable(
   },
   (table) => [
     uniqueIndex("task_workspace_external_key_unique").on(table.workspaceId, table.externalKey),
+    uniqueIndex("task_workspace_id_unique").on(table.workspaceId, table.id),
     index("task_workspace_idx").on(table.workspaceId),
+    foreignKey({
+      name: "task_workspace_wallet_fk",
+      columns: [table.workspaceId, table.walletId],
+      foreignColumns: [wallets.workspaceId, wallets.id],
+    }),
   ],
 );
 
@@ -230,9 +238,7 @@ export const paymentEvents = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    walletId: uuid("wallet_id")
-      .notNull()
-      .references(() => wallets.id, { onDelete: "cascade" }),
+    walletId: uuid("wallet_id").notNull(),
     taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
     chainEventId: uuid("chain_event_id").references(() => chainEvents.id, { onDelete: "set null" }),
     externalId: text("external_id").notNull(),
@@ -260,6 +266,16 @@ export const paymentEvents = pgTable(
     index("payment_task_idx").on(table.taskId),
     check("payment_amount_positive", sql`${table.amount} > 0`),
     check("payment_currency_usdc", sql`${table.currency} = 'USDC'`),
+    foreignKey({
+      name: "payment_workspace_wallet_fk",
+      columns: [table.workspaceId, table.walletId],
+      foreignColumns: [wallets.workspaceId, wallets.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "payment_workspace_task_fk",
+      columns: [table.workspaceId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.id],
+    }),
   ],
 );
 
@@ -270,8 +286,8 @@ export const budgets = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "cascade" }),
-    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+    walletId: uuid("wallet_id"),
+    taskId: uuid("task_id"),
     providerId: text("provider_id"),
     periodType: budgetPeriodEnum("period_type").notNull(),
     periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
@@ -296,6 +312,16 @@ export const budgets = pgTable(
       "budget_warning_threshold_valid",
       sql`${table.warningThreshold} > 0 and ${table.warningThreshold} <= 100`,
     ),
+    foreignKey({
+      name: "budget_workspace_wallet_fk",
+      columns: [table.workspaceId, table.walletId],
+      foreignColumns: [wallets.workspaceId, wallets.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "budget_workspace_task_fk",
+      columns: [table.workspaceId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -306,7 +332,7 @@ export const analysisSnapshots = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "cascade" }),
+    walletId: uuid("wallet_id"),
     rangeStart: timestamp("range_start", { withTimezone: true }).notNull(),
     rangeEnd: timestamp("range_end", { withTimezone: true }).notNull(),
     version: text("version").notNull(),
@@ -320,8 +346,14 @@ export const analysisSnapshots = pgTable(
       table.inputHash,
       table.version,
     ),
+    uniqueIndex("analysis_workspace_id_unique").on(table.workspaceId, table.id),
     index("analysis_workspace_calculated_idx").on(table.workspaceId, table.calculatedAt),
     check("analysis_range_valid", sql`${table.rangeEnd} >= ${table.rangeStart}`),
+    foreignKey({
+      name: "analysis_workspace_wallet_fk",
+      columns: [table.workspaceId, table.walletId],
+      foreignColumns: [wallets.workspaceId, wallets.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -332,7 +364,7 @@ export const riskSignals = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "cascade" }),
+    walletId: uuid("wallet_id"),
     taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
     analysisSnapshotId: uuid("analysis_snapshot_id").references(() => analysisSnapshots.id, {
       onDelete: "set null",
@@ -350,6 +382,21 @@ export const riskSignals = pgTable(
   (table) => [
     index("risk_workspace_status_idx").on(table.workspaceId, table.status, table.detectedAt),
     index("risk_wallet_idx").on(table.walletId),
+    foreignKey({
+      name: "risk_workspace_wallet_fk",
+      columns: [table.workspaceId, table.walletId],
+      foreignColumns: [wallets.workspaceId, wallets.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "risk_workspace_task_fk",
+      columns: [table.workspaceId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.id],
+    }),
+    foreignKey({
+      name: "risk_workspace_analysis_fk",
+      columns: [table.workspaceId, table.analysisSnapshotId],
+      foreignColumns: [analysisSnapshots.workspaceId, analysisSnapshots.id],
+    }),
   ],
 );
 
@@ -377,7 +424,24 @@ export const reports = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("report_workspace_created_idx").on(table.workspaceId, table.createdAt)],
+  (table) => [
+    index("report_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    foreignKey({
+      name: "report_workspace_wallet_fk",
+      columns: [table.workspaceId, table.walletId],
+      foreignColumns: [wallets.workspaceId, wallets.id],
+    }),
+    foreignKey({
+      name: "report_workspace_task_fk",
+      columns: [table.workspaceId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.id],
+    }),
+    foreignKey({
+      name: "report_workspace_analysis_fk",
+      columns: [table.workspaceId, table.analysisSnapshotId],
+      foreignColumns: [analysisSnapshots.workspaceId, analysisSnapshots.id],
+    }),
+  ],
 );
 
 export const syncCursors = pgTable(
@@ -387,9 +451,7 @@ export const syncCursors = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    walletId: uuid("wallet_id")
-      .notNull()
-      .references(() => wallets.id, { onDelete: "cascade" }),
+    walletId: uuid("wallet_id").notNull(),
     source: paymentSourceEnum("source").notNull(),
     cursor: text("cursor"),
     status: syncStatusEnum("status").notNull().default("idle"),
@@ -401,6 +463,11 @@ export const syncCursors = pgTable(
   (table) => [
     uniqueIndex("sync_cursor_wallet_source_unique").on(table.walletId, table.source),
     index("sync_cursor_workspace_idx").on(table.workspaceId),
+    foreignKey({
+      name: "sync_cursor_workspace_wallet_fk",
+      columns: [table.workspaceId, table.walletId],
+      foreignColumns: [wallets.workspaceId, wallets.id],
+    }).onDelete("cascade"),
   ],
 );
 

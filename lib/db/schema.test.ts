@@ -31,7 +31,7 @@ describe("PostgreSQL persistence schema", () => {
   });
 
   afterEach(async () => {
-    await testDatabase.close();
+    await testDatabase?.close();
   });
 
   async function createWorkspace(name: string) {
@@ -180,6 +180,35 @@ describe("PostgreSQL persistence schema", () => {
       testDatabase.database
         .insert(paymentEvents)
         .values({ ...payment, id: randomUUID(), amount: "0.000002" }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects cross-workspace relationships at the database boundary", async () => {
+    const first = await createWorkspace("Tenant A");
+    const second = await createWorkspace("Tenant B");
+    const secondWalletId = randomUUID();
+    const address = "0x3333333333333333333333333333333333333333";
+    await testDatabase.database.insert(wallets).values({
+      id: secondWalletId,
+      workspaceId: second.workspaceId,
+      address,
+      normalizedAddress: address,
+      chainId: 5_042_002,
+      source: "manual",
+      label: "Tenant B wallet",
+      capabilities,
+    });
+
+    await expect(
+      testDatabase.database.insert(paymentEvents).values({
+        id: randomUUID(),
+        workspaceId: first.workspaceId,
+        walletId: secondWalletId,
+        externalId: "cross-tenant-payment",
+        amount: "0.01",
+        occurredAt: new Date(),
+        source: "arc",
+      }),
     ).rejects.toThrow();
   });
 });

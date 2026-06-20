@@ -1,0 +1,64 @@
+import { z } from "zod";
+
+const evmAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "Invalid EVM wallet address");
+const usdcAmount = z
+  .string()
+  .regex(/^(0|[1-9]\d*)(\.\d{1,6})?$/, "Invalid USDC amount")
+  .refine((value) => Number(value) > 0, "USDC amount must be positive");
+
+export const createWalletInputSchema = z.object({
+  address: evmAddress,
+  chainId: z.number().int().positive(),
+  source: z.enum(["manual", "metamask", "circle_user_controlled", "circle_agent", "external"]),
+  label: z.string().trim().min(1).max(120),
+  isPrimary: z.boolean().default(false),
+  ownershipStatus: z.enum(["unverified", "verified", "managed"]).default("unverified"),
+  capabilities: z.object({
+    observable: z.boolean(),
+    ownershipVerified: z.boolean(),
+    userSignable: z.boolean(),
+    agentExecutable: z.boolean(),
+    policyEnforceable: z.boolean(),
+  }),
+  externalProvider: z.string().trim().min(1).max(120).optional(),
+  externalWalletId: z.string().trim().min(1).max(240).optional(),
+});
+
+export const ingestPaymentInputSchema = z.object({
+  walletId: z.string().uuid(),
+  taskId: z.string().uuid().optional(),
+  chainEventId: z.string().uuid().optional(),
+  externalId: z.string().trim().min(1).max(300),
+  transactionHash: z.string().trim().max(100).optional(),
+  amount: usdcAmount,
+  providerId: z.string().trim().max(200).optional(),
+  providerName: z.string().trim().max(200).optional(),
+  category: z.string().trim().max(120).optional(),
+  resourceUri: z.string().trim().max(2_000).optional(),
+  occurredAt: z.date(),
+  source: z.enum(["arc", "circle_gateway", "x402", "demo"]),
+  rawReference: z.string().trim().max(500).optional(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const createBudgetInputSchema = z
+  .object({
+    walletId: z.string().uuid().optional(),
+    taskId: z.string().uuid().optional(),
+    providerId: z.string().trim().min(1).max(200).optional(),
+    periodType: z.enum(["task", "daily", "weekly", "monthly", "custom"]),
+    periodStart: z.date(),
+    periodEnd: z.date(),
+    amount: usdcAmount,
+    warningThreshold: z.number().positive().max(100).default(80),
+    hardLimitRequested: z.boolean().default(false),
+    createdBy: z.string().uuid().optional(),
+  })
+  .refine((input) => input.periodEnd > input.periodStart, {
+    message: "Budget period end must be after its start",
+    path: ["periodEnd"],
+  });
+
+export type CreateWalletInput = z.input<typeof createWalletInputSchema>;
+export type IngestPaymentInput = z.input<typeof ingestPaymentInputSchema>;
+export type CreateBudgetInput = z.input<typeof createBudgetInputSchema>;
