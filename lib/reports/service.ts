@@ -84,6 +84,7 @@ export class ReportService {
     context: AuthContext,
     input: { provider: ReportProvider; rangeStart: Date; rangeEnd: Date },
     idempotencyKey: string,
+    source: "web" | "mcp" = "web",
   ) {
     requireWriteRole(context);
     const key = normalizeKey(idempotencyKey);
@@ -132,7 +133,7 @@ export class ReportService {
           action: "report.generation_started",
           entityType: "report",
           entityId: report.id,
-          source: "web",
+          source,
           idempotencyKey: key,
           payload: {
             provider: input.provider,
@@ -160,7 +161,7 @@ export class ReportService {
           action: "report.generated",
           entityType: "report",
           entityId: completed.id,
-          source: "web",
+          source,
           idempotencyKey: key,
           payload: {
             provider: input.provider,
