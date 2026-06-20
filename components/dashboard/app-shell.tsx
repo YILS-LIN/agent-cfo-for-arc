@@ -1,9 +1,10 @@
 "use client";
 
-import { Bell, CalendarDays, ChevronDown, Globe2 } from "lucide-react";
+import { Bell, CalendarDays, Globe2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Sidebar } from "@/components/dashboard/sidebar";
+import { AuthAccountControl } from "@/components/auth/auth-account-control";
 
 type AppShellProps = {
   title: string;
@@ -15,7 +16,6 @@ type AppShellProps = {
 
 function HeaderControls({ owner }: { owner: string }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -65,32 +65,7 @@ function HeaderControls({ owner }: { owner: string }) {
           </div>
         )}
       </div>
-      <div className="relative">
-        <button
-          type="button"
-          className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-2.5"
-          aria-expanded={accountOpen}
-          onClick={() => setAccountOpen((value) => !value)}
-        >
-          <span className="flex size-7 items-center justify-center rounded-full bg-blue-soft text-[10px] font-bold text-blue">
-            AM
-          </span>
-          <span className="hidden text-left xl:block">
-            <span className="block text-xs font-semibold">{owner}</span>
-            <span className="block text-[10px] text-muted">Admin</span>
-          </span>
-          <ChevronDown className="size-3.5 text-muted" />
-        </button>
-        {accountOpen && (
-          <div className="absolute right-0 top-12 z-40 w-48 rounded-lg border border-line bg-white p-2 text-sm shadow-xl">
-            <p className="px-2 py-1 font-semibold">{owner}</p>
-            <p className="px-2 pb-2 text-xs text-muted">Workspace administrator</p>
-            <a href="/settings" className="block rounded-md px-2 py-2 hover:bg-blue-soft">
-              Workspace settings
-            </a>
-          </div>
-        )}
-      </div>
+      <AuthAccountControl fallbackOwner={owner} />
     </div>
   );
 }
