@@ -4,6 +4,7 @@ import {
   createBudgetInputSchema,
   createTaskInputSchema,
   createWalletInputSchema,
+  ingestPaymentInputSchema,
   updateTaskStatusInputSchema,
 } from "@/lib/db/validation";
 
@@ -37,3 +38,27 @@ export const updateWalletRequestSchema = z.object({
 
 export const createTaskRequestSchema = createTaskInputSchema;
 export const updateTaskStatusRequestSchema = updateTaskStatusInputSchema.omit({ taskId: true });
+
+export const ingestPaymentRequestSchema = z.object({
+  walletId: ingestPaymentInputSchema.shape.walletId,
+  taskId: ingestPaymentInputSchema.shape.taskId,
+  chainEventId: ingestPaymentInputSchema.shape.chainEventId,
+  externalId: ingestPaymentInputSchema.shape.externalId,
+  transactionHash: ingestPaymentInputSchema.shape.transactionHash,
+  amount: ingestPaymentInputSchema.shape.amount,
+  providerId: ingestPaymentInputSchema.shape.providerId,
+  providerName: ingestPaymentInputSchema.shape.providerName,
+  category: ingestPaymentInputSchema.shape.category,
+  resourceUri: ingestPaymentInputSchema.shape.resourceUri,
+  occurredAt: z.coerce.date(),
+  source: ingestPaymentInputSchema.shape.source,
+  rawReference: ingestPaymentInputSchema.shape.rawReference,
+  metadata: ingestPaymentInputSchema.shape.metadata,
+});
+
+export const listPaymentsQuerySchema = z.object({
+  walletId: z.string().uuid().optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  limit: z.coerce.number().int().positive().max(1_000).default(500),
+});

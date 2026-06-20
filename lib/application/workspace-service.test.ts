@@ -13,9 +13,18 @@ import type { AppDatabase } from "@/lib/db/database";
 import {
   IdempotencyConflictError,
   OptimisticLockError,
+  PaymentReplayConflictError,
+  RepositoryNotFoundError,
   WorkspaceRepository,
 } from "@/lib/db/repositories";
-import { auditEvents, budgets, idempotencyKeys, tasks, wallets } from "@/lib/db/schema";
+import {
+  auditEvents,
+  budgets,
+  idempotencyKeys,
+  paymentEvents,
+  tasks,
+  wallets,
+} from "@/lib/db/schema";
 import { createTestDatabase } from "@/lib/db/testing";
 
 type TestDatabase = Awaited<ReturnType<typeof createTestDatabase>>;
@@ -184,6 +193,51 @@ describe("WorkspaceApplicationService", () => {
     ).rejects.toBeInstanceOf(OptimisticLockError);
     await expect(database.select().from(tasks)).resolves.toHaveLength(1);
     await expect(database.select().from(auditEvents)).resolves.toHaveLength(2);
+  });
+
+  it("ingests payment events once, audits creation, and rejects conflicting replays", async () => {
+    const wallet = await service.createWallet(owner, walletInput(), "payment-wallet");
+    const payment = {
+      walletId: wallet.wallet.id,
+      externalId: "x402-payment-1",
+      transactionHash: "0xabc123",
+      amount: "0.000001",
+      occurredAt: new Date("2026-06-20T12:00:00.000Z"),
+      source: "x402" as const,
+      providerName: "Research API",
+      metadata: { requestId: "request-1" },
+    };
+
+    const first = await service.ingestPayment(owner, payment);
+    const replay = await service.ingestPayment(owner, payment);
+
+    expect(first.created).toBe(true);
+    expect(replay).toMatchObject({ created: false, payment: { id: first.payment.id } });
+    await expect(service.ingestPayment(owner, { ...payment, amount: "2" })).rejects.toBeInstanceOf(
+      PaymentReplayConflictError,
+    );
+    await expect(database.select().from(paymentEvents)).resolves.toHaveLength(1);
+    await expect(database.select().from(auditEvents)).resolves.toHaveLength(2);
+  });
+
+  it("rejects payment ingestion through a wallet from another workspace", async () => {
+    const otherScope = await new WorkspaceRepository(database).createPersonalWorkspace({
+      displayName: "Bob",
+      email: "bob@example.com",
+    });
+    const otherContext: AuthContext = { ...otherScope, role: "owner", identities: [] };
+    const otherWallet = await service.createWallet(otherContext, walletInput(), "other-wallet");
+
+    await expect(
+      service.ingestPayment(owner, {
+        walletId: otherWallet.wallet.id,
+        externalId: "cross-tenant-payment",
+        amount: "1",
+        occurredAt: new Date("2026-06-20T12:00:00.000Z"),
+        source: "arc",
+      }),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError);
+    await expect(database.select().from(paymentEvents)).resolves.toHaveLength(0);
   });
 
   it("marks failed idempotent mutations without creating an audit record", async () => {

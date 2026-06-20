@@ -12,6 +12,7 @@ import { authErrorResponse } from "@/lib/auth/server";
 import {
   IdempotencyConflictError,
   OptimisticLockError,
+  PaymentReplayConflictError,
   RepositoryNotFoundError,
 } from "@/lib/db/repositories";
 
@@ -43,6 +44,12 @@ export function apiErrorResponse(error: unknown) {
   if (error instanceof IdempotencyConflictError) {
     return NextResponse.json(
       { error: error.message, code: "IDEMPOTENCY_CONFLICT" },
+      { status: 409 },
+    );
+  }
+  if (error instanceof PaymentReplayConflictError) {
+    return NextResponse.json(
+      { error: error.message, code: "PAYMENT_REPLAY_CONFLICT" },
       { status: 409 },
     );
   }

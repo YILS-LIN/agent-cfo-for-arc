@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, lt, sql } from "drizzle-orm";
 
 import type { AppDatabase, WorkspaceScope } from "@/lib/db/database";
+import { parseUsdc } from "@/lib/domain/usdc";
 import {
   auditEvents,
   budgets,
@@ -30,6 +31,7 @@ import {
 export class RepositoryNotFoundError extends Error {}
 export class OptimisticLockError extends Error {}
 export class IdempotencyConflictError extends Error {}
+export class PaymentReplayConflictError extends Error {}
 
 export class WorkspaceRepository {
   constructor(private readonly database: AppDatabase) {}
@@ -182,6 +184,24 @@ export class PaymentRepository {
       )
       .limit(1);
     if (!existing) throw new Error("Payment conflict occurred without an existing row");
+    const sameEvent =
+      existing.walletId === input.walletId &&
+      (existing.taskId ?? undefined) === input.taskId &&
+      (existing.chainEventId ?? undefined) === input.chainEventId &&
+      (existing.transactionHash ?? undefined) === input.transactionHash &&
+      parseUsdc(existing.amount) === parseUsdc(input.amount) &&
+      (existing.providerId ?? undefined) === input.providerId &&
+      (existing.providerName ?? undefined) === input.providerName &&
+      (existing.category ?? undefined) === input.category &&
+      (existing.resourceUri ?? undefined) === input.resourceUri &&
+      existing.occurredAt.getTime() === input.occurredAt.getTime() &&
+      (existing.rawReference ?? undefined) === input.rawReference &&
+      stableStringify(existing.metadata) === stableStringify(input.metadata);
+    if (!sameEvent) {
+      throw new PaymentReplayConflictError(
+        "Payment source and external ID were reused with different immutable fields",
+      );
+    }
     return { payment: existing, created: false } as const;
   }
 }

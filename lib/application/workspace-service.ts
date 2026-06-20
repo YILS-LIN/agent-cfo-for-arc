@@ -4,12 +4,19 @@ import {
   AuditRepository,
   BudgetRepository,
   IdempotencyRepository,
+  PaymentRepository,
   RepositoryNotFoundError,
   TaskRepository,
   WalletRepository,
 } from "@/lib/db/repositories";
-import type { CreateBudgetInput, CreateWalletInput } from "@/lib/db/validation";
-import type { CreateTaskInput, UpdateTaskStatusInput } from "@/lib/db/validation";
+import type {
+  CreateBudgetInput,
+  CreateTaskInput,
+  CreateWalletInput,
+  IngestPaymentInput,
+  UpdateTaskStatusInput,
+} from "@/lib/db/validation";
+import { ingestPaymentInputSchema } from "@/lib/db/validation";
 
 export class ApplicationPermissionError extends Error {}
 export class IdempotencyKeyRequiredError extends Error {}
@@ -38,6 +45,7 @@ export class WorkspaceApplicationService {
   private readonly audits: AuditRepository;
   private readonly idempotency: IdempotencyRepository;
   private readonly tasks: TaskRepository;
+  private readonly payments: PaymentRepository;
 
   constructor(private readonly database: AppDatabase) {
     this.wallets = new WalletRepository(database);
@@ -45,6 +53,7 @@ export class WorkspaceApplicationService {
     this.audits = new AuditRepository(database);
     this.idempotency = new IdempotencyRepository(database);
     this.tasks = new TaskRepository(database);
+    this.payments = new PaymentRepository(database);
   }
 
   listWallets(context: AuthContext) {
@@ -120,6 +129,50 @@ export class WorkspaceApplicationService {
 
   listTasks(context: AuthContext) {
     return this.tasks.list(context);
+  }
+
+  listPayments(
+    context: AuthContext,
+    filters: { walletId?: string; from?: Date; to?: Date; limit?: number } = {},
+  ) {
+    return this.payments.list(context, filters);
+  }
+
+  async ingestPayment(
+    context: AuthContext,
+    input: IngestPaymentInput,
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    const normalizedInput = ingestPaymentInputSchema.parse(input);
+    const wallet = await this.wallets.getById(context, normalizedInput.walletId);
+    if (!wallet) throw new RepositoryNotFoundError("Workspace wallet not found");
+    if (normalizedInput.taskId) {
+      const task = await this.tasks.getById(context, normalizedInput.taskId);
+      if (!task) throw new RepositoryNotFoundError("Workspace task not found");
+    }
+    return this.database.transaction(async (transaction) => {
+      const payments = new PaymentRepository(transaction);
+      const audits = new AuditRepository(transaction);
+      const result = await payments.ingest(context, normalizedInput);
+      if (result.created) {
+        await audits.record(context, {
+          actorUserId: context.userId,
+          action: "payment.ingested",
+          entityType: "payment",
+          entityId: result.payment.id,
+          source,
+          payload: {
+            paymentSource: result.payment.source,
+            externalId: result.payment.externalId,
+            walletId: result.payment.walletId,
+            taskId: result.payment.taskId,
+            amount: result.payment.amount,
+          },
+        });
+      }
+      return result;
+    });
   }
 
   async createTask(
