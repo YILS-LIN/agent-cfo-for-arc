@@ -1,10 +1,26 @@
 import { NextResponse } from "next/server";
 
-import { buildAgentSpendSummary } from "@/lib/analytics/agent-summary";
+import { apiErrorResponse } from "@/lib/application/api-errors";
+import { generateReportRequestSchema } from "@/lib/application/api-validation";
+import { getAuthService } from "@/lib/auth/server";
+import { getReportService } from "@/lib/reports/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as { wallet?: string };
-  const summary = buildAgentSpendSummary({ wallet: body.wallet });
-
-  return NextResponse.json(summary.report);
+  try {
+    const context = await getAuthService().resolve(request);
+    const input = generateReportRequestSchema.parse(await request.json());
+    const rangeEnd = input.rangeEnd ?? new Date();
+    const rangeStart = input.rangeStart ?? new Date(rangeEnd.getTime() - 30 * 24 * 60 * 60 * 1_000);
+    const result = await getReportService().generate(
+      context,
+      { provider: input.provider, rangeStart, rangeEnd },
+      request.headers.get("Idempotency-Key") ?? "",
+    );
+    return NextResponse.json(result, { status: result.replayed ? 200 : 201 });
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
 }

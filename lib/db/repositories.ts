@@ -14,6 +14,7 @@ import {
   paymentEvents,
   providerPolicies,
   riskSignals,
+  reports,
   syncCursors,
   tasks,
   users,
@@ -846,7 +847,84 @@ export class AiCredentialRepository {
   }
 }
 
+export class ReportRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async list(scope: WorkspaceScope) {
+    return this.database
+      .select()
+      .from(reports)
+      .where(eq(reports.workspaceId, scope.workspaceId))
+      .orderBy(desc(reports.createdAt));
+  }
+
+  async getById(scope: WorkspaceScope, reportId: string) {
+    const [report] = await this.database
+      .select()
+      .from(reports)
+      .where(and(eq(reports.workspaceId, scope.workspaceId), eq(reports.id, reportId)))
+      .limit(1);
+    return report ?? null;
+  }
+
+  async createPending(
+    scope: WorkspaceScope,
+    input: {
+      title: string;
+      provider: string;
+      model: string;
+      promptVersion: string;
+      createdBy: string;
+    },
+  ) {
+    const now = new Date();
+    const [report] = await this.database
+      .insert(reports)
+      .values({
+        id: randomUUID(),
+        workspaceId: scope.workspaceId,
+        status: "pending",
+        ...input,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    if (!report) throw new Error("Report insert returned no row");
+    return report;
+  }
+
+  async complete(
+    scope: WorkspaceScope,
+    input: { reportId: string; content: Record<string, unknown> },
+  ) {
+    const now = new Date();
+    const [report] = await this.database
+      .update(reports)
+      .set({
+        status: "completed",
+        content: input.content,
+        errorCode: null,
+        generatedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(reports.workspaceId, scope.workspaceId), eq(reports.id, input.reportId)))
+      .returning();
+    if (!report) throw new RepositoryNotFoundError("Report not found");
+    return report;
+  }
+
+  async fail(scope: WorkspaceScope, input: { reportId: string; errorCode: string }) {
+    const [report] = await this.database
+      .update(reports)
+      .set({ status: "failed", errorCode: input.errorCode, updatedAt: new Date() })
+      .where(and(eq(reports.workspaceId, scope.workspaceId), eq(reports.id, input.reportId)))
+      .returning();
+    return report ?? null;
+  }
+}
+
 function stableStringify(value: unknown): string {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   if (value && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>

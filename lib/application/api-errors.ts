@@ -28,6 +28,8 @@ import {
 import { SyncSourceUnavailableError } from "@/lib/sync/circle-public-adapter";
 import { SyncAdapterNotConfiguredError, SyncPermissionError } from "@/lib/sync/service";
 import { SecretDecryptionError, SecretVaultNotConfiguredError } from "@/lib/secrets/vault";
+import { AiProviderResponseError } from "@/lib/ai/report-generator";
+import { ReportContentError } from "@/lib/reports/service";
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof InternalAuthenticationRequiredError) {
@@ -73,6 +75,19 @@ export function apiErrorResponse(error: unknown) {
     return NextResponse.json(
       { error: error.message, code: "AI_CREDENTIAL_NOT_CONFIGURED" },
       { status: 422 },
+    );
+  }
+  if (error instanceof AiProviderResponseError) {
+    const status = error.code === "rate_limit" ? 429 : error.code === "unavailable" ? 502 : 422;
+    return NextResponse.json(
+      { error: error.message, code: `AI_${error.code.toUpperCase()}` },
+      { status, headers: error.code === "rate_limit" ? { "Retry-After": "30" } : undefined },
+    );
+  }
+  if (error instanceof ReportContentError) {
+    return NextResponse.json(
+      { error: error.message, code: "REPORT_CONTENT_INVALID" },
+      { status: 500 },
     );
   }
   if (error instanceof SecretVaultNotConfiguredError) {

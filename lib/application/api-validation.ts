@@ -117,3 +117,14 @@ export const storeAiCredentialRequestSchema = z.object({
 export const deleteAiCredentialQuerySchema = z.object({
   expectedVersion: z.coerce.number().int().positive(),
 });
+
+export const generateReportRequestSchema = z
+  .object({
+    provider: z.enum(["local", "openai"]),
+    rangeStart: z.coerce.date().optional(),
+    rangeEnd: z.coerce.date().optional(),
+  })
+  .refine((input) => !input.rangeStart || !input.rangeEnd || input.rangeEnd > input.rangeStart, {
+    message: "Report range end must be after its start",
+    path: ["rangeEnd"],
+  });
