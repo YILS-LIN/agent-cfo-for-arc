@@ -26,6 +26,8 @@ type WalletRecord = {
   budget: UsdcAmount;
   spent: UsdcAmount;
   primary: boolean;
+  syncStatus?: "idle" | "syncing" | "ready" | "partial" | "failed";
+  syncDetail?: string;
 };
 
 type PersistentWallet = {
@@ -36,7 +38,15 @@ type PersistentWallet = {
   isPrimary: boolean;
 };
 
-function toWalletRecord(wallet: PersistentWallet): WalletRecord {
+type PersistentSyncCursor = {
+  walletId: string;
+  source: "arc" | "circle_gateway" | "x402" | "demo";
+  status: "idle" | "syncing" | "ready" | "partial" | "failed";
+  lastError?: string | null;
+  lastSucceededAt?: string | null;
+};
+
+function toWalletRecord(wallet: PersistentWallet, cursor?: PersistentSyncCursor): WalletRecord {
   return {
     id: wallet.id,
     address: wallet.address,
@@ -45,6 +55,13 @@ function toWalletRecord(wallet: PersistentWallet): WalletRecord {
     budget: "0",
     spent: "0",
     primary: wallet.isPrimary,
+    syncStatus: cursor?.status ?? "idle",
+    syncDetail:
+      cursor?.status === "failed"
+        ? (cursor.lastError ?? "Last sync failed")
+        : cursor?.lastSucceededAt
+          ? `Last synced ${new Date(cursor.lastSucceededAt).toLocaleString()}`
+          : "No completed sync",
   };
 }
 
@@ -82,6 +99,7 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
   const [label, setLabel] = useState("");
   const [address, setAddress] = useState("");
   const [mutating, setMutating] = useState(false);
+  const [syncingWalletId, setSyncingWalletId] = useState<string | null>(null);
   const [message, setMessage] = useState("Demo wallet records are held in browser memory only.");
   const usingPersistentWorkspace = mode === "persistent" && authenticated;
   const persistentLoaded = Boolean(session && loadedWorkspaceId === session.workspaceId);
@@ -94,17 +112,32 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
 
   const loadPersistentWallets = useCallback(
     async (workspaceId: string, signal?: AbortSignal) => {
-      const response = await apiFetch("/api/wallets", { signal });
-      if (!response.ok) {
-        throw new Error(await getApiErrorMessage(response, "Unable to load workspace wallets"));
+      const [walletsResponse, syncResponse] = await Promise.all([
+        apiFetch("/api/wallets", { signal }),
+        apiFetch("/api/sync", { signal }),
+      ]);
+      for (const response of [walletsResponse, syncResponse]) {
+        if (!response.ok) {
+          throw new Error(await getApiErrorMessage(response, "Unable to load workspace wallets"));
+        }
       }
-      const payload = (await response.json()) as { wallets: PersistentWallet[] };
+      const payload = (await walletsResponse.json()) as { wallets: PersistentWallet[] };
+      const syncPayload = (await syncResponse.json()) as { cursors: PersistentSyncCursor[] };
       signal?.throwIfAborted();
-      setPersistentWallets(payload.wallets.map(toWalletRecord));
+      setPersistentWallets(
+        payload.wallets.map((wallet) =>
+          toWalletRecord(
+            wallet,
+            syncPayload.cursors.find(
+              (cursor) => cursor.walletId === wallet.id && cursor.source === "circle_gateway",
+            ),
+          ),
+        ),
+      );
       setLoadedWorkspaceId(workspaceId);
       setMessage(
         payload.wallets.length
-          ? "Wallets are persisted to this workspace. Arc synchronization status follows next."
+          ? "Wallets are persisted with leased Circle synchronization status."
           : "No persistent wallets yet. Connect the first Arc wallet for this workspace.",
       );
     },
@@ -219,6 +252,35 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
       setMessage(error instanceof Error ? error.message : "Unable to set primary wallet");
     } finally {
       setMutating(false);
+    }
+  }
+
+  async function syncWallet(wallet: WalletRecord) {
+    if (!wallet.id || !session || !canWrite || !usingPersistentWorkspace) return;
+    setMutating(true);
+    setSyncingWalletId(wallet.id);
+    setMessage(`Synchronizing verified Circle evidence for ${wallet.label}…`);
+    try {
+      const response = await apiFetch(`/api/wallets/${encodeURIComponent(wallet.id)}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "circle_gateway" }),
+      });
+      if (!response.ok) {
+        setMessage(await getApiErrorMessage(response, "Unable to synchronize wallet"));
+        await loadPersistentWallets(session.workspaceId);
+        return;
+      }
+      const result = (await response.json()) as { created: number; replayed: number };
+      await loadPersistentWallets(session.workspaceId);
+      setMessage(
+        `Circle sync completed: ${result.created} new and ${result.replayed} existing events reconciled.`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to synchronize wallet");
+    } finally {
+      setMutating(false);
+      setSyncingWalletId(null);
     }
   }
 
@@ -370,6 +432,17 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
                 <div>
                   <p className="text-xs text-muted">Network</p>
                   <p className="mt-1 text-sm font-semibold">{wallet.network}</p>
+                  {usingPersistentWorkspace && (
+                    <p
+                      className={cn(
+                        "mt-1 text-[11px] capitalize",
+                        wallet.syncStatus === "failed" ? "text-red" : "text-muted",
+                      )}
+                      title={wallet.syncDetail}
+                    >
+                      Sync: {wallet.syncStatus}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <div className="mb-2 flex items-center justify-between text-xs">
@@ -382,6 +455,18 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
                   </p>
                 </div>
                 <div className="flex gap-2">
+                  {usingPersistentWorkspace && (
+                    <Button
+                      variant="ghost"
+                      disabled={!canWrite || mutating}
+                      onClick={() => void syncWallet(wallet)}
+                    >
+                      <RefreshCw
+                        className={cn("size-4", syncingWalletId === wallet.id && "animate-spin")}
+                      />{" "}
+                      Sync
+                    </Button>
+                  )}
                   {!wallet.primary && (
                     <Button
                       variant="ghost"
