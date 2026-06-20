@@ -1,17 +1,67 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CircleDollarSign, Download, Filter, ReceiptText, Search, TrendingUp } from "lucide-react";
 
 import { AppShell } from "@/components/dashboard/app-shell";
+import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
 import { ProviderMark } from "@/components/dashboard/provider-mark";
 import { SectionCard, SummaryStat, inputClassName } from "@/components/dashboard/page-ui";
 import { Button } from "@/components/ui/button";
 import { ARC_TESTNET_EXPLORER, CIRCLE_GATEWAY_TESTNET_API } from "@/lib/arc/evidence-config";
 import { compareUsdc, sumUsdc } from "@/lib/domain/usdc";
+import { getApiErrorMessage } from "@/lib/client/api";
 import { formatCurrency } from "@/lib/utils";
 import type { AgentSpendSummary } from "@/types/agent";
-import type { PaymentEvent, SpendCategory } from "@/types/payment";
+import type { PaymentEvent } from "@/types/payment";
+
+type PersistentPayment = {
+  id: string;
+  walletId: string;
+  taskId?: string | null;
+  externalId: string;
+  transactionHash?: string | null;
+  amount: string;
+  providerName?: string | null;
+  category?: string | null;
+  resourceUri?: string | null;
+  occurredAt: string;
+  source: "demo" | "circle_gateway" | "arc" | "x402";
+  rawReference?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+type PersistentTask = { id: string; name: string };
+type PersistentWallet = { id: string; address: string; chainId: number };
+
+function mapPersistentPayment(
+  payment: PersistentPayment,
+  tasks: Map<string, string>,
+  wallets: Map<string, PersistentWallet>,
+): PaymentEvent {
+  const wallet = wallets.get(payment.walletId);
+  const memo = typeof payment.metadata.memo === "string" ? payment.metadata.memo : undefined;
+  return {
+    id: payment.id,
+    txHash: payment.transactionHash ?? "",
+    wallet: wallet?.address ?? "",
+    provider: payment.providerName ?? "Unknown provider",
+    providerLogo: "",
+    payee: "",
+    category: (payment.category ?? "Uncategorized") as PaymentEvent["category"],
+    taskId: payment.taskId ?? "",
+    taskName: payment.taskId ? (tasks.get(payment.taskId) ?? "Unknown task") : "Unassigned",
+    amount: payment.amount,
+    currency: "USDC",
+    timestamp: payment.occurredAt,
+    status: "completed",
+    memo: memo ?? payment.resourceUri ?? `External event ${payment.externalId}`,
+    x402Resource: payment.resourceUri ?? "",
+    chainId: wallet?.chainId ?? 0,
+    source: payment.source,
+    rawReference: payment.rawReference ?? undefined,
+  };
+}
 
 export function SpendPage({
   summary,
@@ -20,13 +70,74 @@ export function SpendPage({
   summary: AgentSpendSummary;
   payments: PaymentEvent[];
 }) {
+  const { mode, authenticated, session, apiFetch } = useWorkspaceSession();
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<"All" | SpendCategory>("All");
+  const [category, setCategory] = useState("All");
   const [status, setStatus] = useState<"all" | PaymentEvent["status"]>("all");
+  const [persistentPayments, setPersistentPayments] = useState<PaymentEvent[]>([]);
+  const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
+  const [ledgerMessage, setLedgerMessage] = useState(
+    "Search by provider, task, memo, or transaction hash.",
+  );
+  const usingPersistentWorkspace = mode === "persistent" && authenticated;
+  const persistentLoaded = Boolean(session && loadedWorkspaceId === session.workspaceId);
+  const visiblePayments = useMemo(
+    () => (usingPersistentWorkspace ? (persistentLoaded ? persistentPayments : []) : payments),
+    [payments, persistentLoaded, persistentPayments, usingPersistentWorkspace],
+  );
+
+  const loadPersistentLedger = useCallback(
+    async (workspaceId: string, signal?: AbortSignal) => {
+      const [paymentsResponse, tasksResponse, walletsResponse] = await Promise.all([
+        apiFetch("/api/payments", { signal }),
+        apiFetch("/api/tasks", { signal }),
+        apiFetch("/api/wallets", { signal }),
+      ]);
+      for (const response of [paymentsResponse, tasksResponse, walletsResponse]) {
+        if (!response.ok) {
+          throw new Error(await getApiErrorMessage(response, "Unable to load workspace ledger"));
+        }
+      }
+      const paymentsPayload = (await paymentsResponse.json()) as { payments: PersistentPayment[] };
+      const tasksPayload = (await tasksResponse.json()) as { tasks: PersistentTask[] };
+      const walletsPayload = (await walletsResponse.json()) as { wallets: PersistentWallet[] };
+      signal?.throwIfAborted();
+      const taskNames = new Map(tasksPayload.tasks.map((task) => [task.id, task.name]));
+      const walletRecords = new Map(walletsPayload.wallets.map((wallet) => [wallet.id, wallet]));
+      setPersistentPayments(
+        paymentsPayload.payments.map((payment) =>
+          mapPersistentPayment(payment, taskNames, walletRecords),
+        ),
+      );
+      setLoadedWorkspaceId(workspaceId);
+      setLedgerMessage(
+        paymentsPayload.payments.length
+          ? "Tenant-scoped, persisted payment events with source evidence where available."
+          : "No persisted payment events have been ingested for this workspace.",
+      );
+    },
+    [apiFetch],
+  );
+
+  useEffect(() => {
+    if (!usingPersistentWorkspace || !session) return;
+    const controller = new AbortController();
+    void Promise.resolve()
+      .then(() => loadPersistentLedger(session.workspaceId, controller.signal))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setPersistentPayments([]);
+        setLoadedWorkspaceId(session.workspaceId);
+        setLedgerMessage(
+          error instanceof Error ? error.message : "Unable to load workspace ledger",
+        );
+      });
+    return () => controller.abort();
+  }, [loadPersistentLedger, session, usingPersistentWorkspace]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return payments.filter(
+    return visiblePayments.filter(
       (payment) =>
         (category === "All" || payment.category === category) &&
         (status === "all" || payment.status === status) &&
@@ -35,7 +146,12 @@ export function SpendPage({
             value.toLowerCase().includes(needle),
           )),
     );
-  }, [category, payments, query, status]);
+  }, [category, query, status, visiblePayments]);
+
+  const categories = useMemo(
+    () => [...new Set(visiblePayments.map((payment) => payment.category))].sort(),
+    [visiblePayments],
+  );
 
   const visibleSpend = sumUsdc(filtered.map((payment) => payment.amount));
   const largest = filtered.reduce(
@@ -78,7 +194,11 @@ export function SpendPage({
   return (
     <AppShell
       title="Spend Ledger"
-      description="Inspect and export every Arc x402 payment event"
+      description={
+        usingPersistentWorkspace
+          ? "Inspect and export persisted workspace payment events"
+          : "Inspect and export trusted demo and Arc evidence"
+      }
       owner={summary.profile.owner}
       actions={
         <Button onClick={exportCsv}>
@@ -102,17 +222,16 @@ export function SpendPage({
         />
         <SummaryStat
           label="Ledger coverage"
-          value="100%"
-          detail="Deterministic demo events reconciled"
+          value={usingPersistentWorkspace ? (persistentLoaded ? "Stored" : "Loading") : "100%"}
+          detail={
+            usingPersistentWorkspace ? "Workspace persistence boundary" : "Demo events reconciled"
+          }
           icon={ReceiptText}
           tone="green"
         />
       </div>
 
-      <SectionCard
-        title="Transactions"
-        description="Search by provider, task, memo, or transaction hash."
-      >
+      <SectionCard title="Transactions" description={ledgerMessage}>
         <div className="mb-4 grid gap-2 md:grid-cols-[minmax(240px,1fr)_180px_160px]">
           <label className="relative">
             <Search className="absolute left-3 top-3 size-4 text-muted" />
@@ -128,11 +247,11 @@ export function SpendPage({
             <select
               className={`${inputClassName} w-full pl-9`}
               value={category}
-              onChange={(event) => setCategory(event.target.value as "All" | SpendCategory)}
+              onChange={(event) => setCategory(event.target.value)}
             >
               <option>All</option>
-              {summary.categories.map((item) => (
-                <option key={item.category}>{item.category}</option>
+              {categories.map((item) => (
+                <option key={item}>{item}</option>
               ))}
             </select>
           </label>
@@ -184,7 +303,7 @@ export function SpendPage({
                       <span className="text-muted">Demo fixture</span>
                     ) : (
                       <span className="inline-flex gap-2">
-                        {payment.rawReference && (
+                        {payment.source === "circle_gateway" && payment.rawReference && (
                           <a
                             className="font-semibold text-blue hover:underline"
                             href={`${CIRCLE_GATEWAY_TESTNET_API}/v1/x402/transfers/${payment.rawReference}`}
@@ -194,14 +313,20 @@ export function SpendPage({
                             Circle ↗
                           </a>
                         )}
-                        <a
-                          className="font-semibold text-blue hover:underline"
-                          href={`${ARC_TESTNET_EXPLORER}/tx/${payment.txHash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Arc ↗
-                        </a>
+                        {payment.txHash && (
+                          <a
+                            className="font-semibold text-blue hover:underline"
+                            href={`${ARC_TESTNET_EXPLORER}/tx/${payment.txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Arc ↗
+                          </a>
+                        )}
+                        {!(payment.source === "circle_gateway" && payment.rawReference) &&
+                          !payment.txHash && (
+                            <span className="text-muted">No public reference</span>
+                          )}
                       </span>
                     )}
                   </td>

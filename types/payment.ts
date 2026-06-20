@@ -21,7 +21,7 @@ export type PaymentEvent = {
   memo: string;
   x402Resource: string;
   chainId: number;
-  source: "demo" | "circle_gateway" | "arc";
+  source: "demo" | "circle_gateway" | "arc" | "x402";
   rawReference?: string;
 };
 
