@@ -46,6 +46,18 @@ export const setProviderPolicyInputSchema = z.object({
   updatedBy: z.string().uuid(),
 });
 
+export const storeAiCredentialInputSchema = z.object({
+  provider: z.literal("openai"),
+  model: z.string().trim().min(1).max(120),
+  encryptedSecret: z.string().min(1),
+  encryptionIv: z.string().min(1),
+  encryptionAuthTag: z.string().min(1),
+  encryptionKeyId: z.string().trim().min(1).max(120),
+  secretHint: z.string().min(1).max(32),
+  expectedVersion: z.number().int().nonnegative(),
+  actorUserId: z.string().uuid(),
+});
+
 export const ingestPaymentInputSchema = z.object({
   walletId: z.string().uuid(),
   taskId: z.string().uuid().optional(),
@@ -85,5 +97,6 @@ export type CreateWalletInput = z.input<typeof createWalletInputSchema>;
 export type CreateTaskInput = z.input<typeof createTaskInputSchema>;
 export type UpdateTaskStatusInput = z.input<typeof updateTaskStatusInputSchema>;
 export type SetProviderPolicyInput = z.input<typeof setProviderPolicyInputSchema>;
+export type StoreAiCredentialInput = z.input<typeof storeAiCredentialInputSchema>;
 export type IngestPaymentInput = z.input<typeof ingestPaymentInputSchema>;
 export type CreateBudgetInput = z.input<typeof createBudgetInputSchema>;

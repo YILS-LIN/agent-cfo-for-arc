@@ -72,6 +72,7 @@ export const providerPolicyDecisionEnum = pgEnum("provider_policy_decision", [
   "review",
   "blocked",
 ]);
+export const credentialStatusEnum = pgEnum("credential_status", ["unverified", "valid", "invalid"]);
 
 export type WalletCapabilities = {
   observable: boolean;
@@ -349,6 +350,35 @@ export const providerPolicies = pgTable(
   (table) => [
     uniqueIndex("provider_policy_workspace_key_unique").on(table.workspaceId, table.providerKey),
     index("provider_policy_workspace_decision_idx").on(table.workspaceId, table.decision),
+  ],
+);
+
+export const aiProviderCredentials = pgTable(
+  "ai_provider_credentials",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    encryptedSecret: text("encrypted_secret").notNull(),
+    encryptionIv: text("encryption_iv").notNull(),
+    encryptionAuthTag: text("encryption_auth_tag").notNull(),
+    encryptionKeyId: text("encryption_key_id").notNull(),
+    secretHint: text("secret_hint").notNull(),
+    status: credentialStatusEnum("status").notNull().default("unverified"),
+    version: integer("version").notNull().default(1),
+    lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
+    lastErrorCode: text("last_error_code"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("ai_credential_workspace_provider_unique").on(table.workspaceId, table.provider),
+    index("ai_credential_workspace_status_idx").on(table.workspaceId, table.status),
   ],
 );
 

@@ -6,6 +6,7 @@ import type { PersistentRiskRule } from "@/lib/analytics/persistent-risk";
 import type { AppDatabase, WorkspaceScope } from "@/lib/db/database";
 import { parseUsdc } from "@/lib/domain/usdc";
 import {
+  aiProviderCredentials,
   analysisSnapshots,
   auditEvents,
   budgets,
@@ -26,12 +27,14 @@ import {
   createWalletInputSchema,
   ingestPaymentInputSchema,
   setProviderPolicyInputSchema,
+  storeAiCredentialInputSchema,
   updateTaskStatusInputSchema,
   type CreateBudgetInput,
   type CreateTaskInput,
   type CreateWalletInput,
   type IngestPaymentInput,
   type SetProviderPolicyInput,
+  type StoreAiCredentialInput,
   type UpdateTaskStatusInput,
 } from "@/lib/db/validation";
 
@@ -711,6 +714,134 @@ export class ProviderPolicyRepository {
     if (!updated) {
       throw new OptimisticLockError("Provider policy was updated by another request or not found");
     }
+    return updated;
+  }
+}
+
+export class AiCredentialRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async listSafe(scope: WorkspaceScope) {
+    return this.database
+      .select({
+        id: aiProviderCredentials.id,
+        provider: aiProviderCredentials.provider,
+        model: aiProviderCredentials.model,
+        secretHint: aiProviderCredentials.secretHint,
+        status: aiProviderCredentials.status,
+        version: aiProviderCredentials.version,
+        lastVerifiedAt: aiProviderCredentials.lastVerifiedAt,
+        lastErrorCode: aiProviderCredentials.lastErrorCode,
+        updatedAt: aiProviderCredentials.updatedAt,
+      })
+      .from(aiProviderCredentials)
+      .where(eq(aiProviderCredentials.workspaceId, scope.workspaceId))
+      .orderBy(asc(aiProviderCredentials.provider));
+  }
+
+  async getByProvider(scope: WorkspaceScope, provider: string) {
+    const [credential] = await this.database
+      .select()
+      .from(aiProviderCredentials)
+      .where(
+        and(
+          eq(aiProviderCredentials.workspaceId, scope.workspaceId),
+          eq(aiProviderCredentials.provider, provider),
+        ),
+      )
+      .limit(1);
+    return credential ?? null;
+  }
+
+  async store(scope: WorkspaceScope, rawInput: StoreAiCredentialInput) {
+    const input = storeAiCredentialInputSchema.parse(rawInput);
+    const now = new Date();
+    const values = {
+      model: input.model,
+      encryptedSecret: input.encryptedSecret,
+      encryptionIv: input.encryptionIv,
+      encryptionAuthTag: input.encryptionAuthTag,
+      encryptionKeyId: input.encryptionKeyId,
+      secretHint: input.secretHint,
+      status: "unverified" as const,
+      lastVerifiedAt: null,
+      lastErrorCode: null,
+      updatedBy: input.actorUserId,
+      updatedAt: now,
+    };
+    if (input.expectedVersion === 0) {
+      const [created] = await this.database
+        .insert(aiProviderCredentials)
+        .values({
+          id: randomUUID(),
+          workspaceId: scope.workspaceId,
+          provider: input.provider,
+          ...values,
+          createdBy: input.actorUserId,
+          createdAt: now,
+        })
+        .onConflictDoNothing({
+          target: [aiProviderCredentials.workspaceId, aiProviderCredentials.provider],
+        })
+        .returning();
+      if (!created) throw new OptimisticLockError("AI credential was created by another request");
+      return created;
+    }
+
+    const [updated] = await this.database
+      .update(aiProviderCredentials)
+      .set({ ...values, version: sql`${aiProviderCredentials.version} + 1` })
+      .where(
+        and(
+          eq(aiProviderCredentials.workspaceId, scope.workspaceId),
+          eq(aiProviderCredentials.provider, input.provider),
+          eq(aiProviderCredentials.version, input.expectedVersion),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new OptimisticLockError("AI credential was updated by another request or not found");
+    }
+    return updated;
+  }
+
+  async delete(scope: WorkspaceScope, input: { provider: string; expectedVersion: number }) {
+    const [deleted] = await this.database
+      .delete(aiProviderCredentials)
+      .where(
+        and(
+          eq(aiProviderCredentials.workspaceId, scope.workspaceId),
+          eq(aiProviderCredentials.provider, input.provider),
+          eq(aiProviderCredentials.version, input.expectedVersion),
+        ),
+      )
+      .returning();
+    if (!deleted) {
+      throw new OptimisticLockError("AI credential was updated by another request or not found");
+    }
+    return deleted;
+  }
+
+  async markStatus(
+    scope: WorkspaceScope,
+    input: { provider: string; status: "valid" | "invalid"; errorCode?: string },
+  ) {
+    const [updated] = await this.database
+      .update(aiProviderCredentials)
+      .set({
+        status: input.status,
+        lastVerifiedAt: new Date(),
+        lastErrorCode: input.errorCode,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(aiProviderCredentials.workspaceId, scope.workspaceId),
+          eq(aiProviderCredentials.provider, input.provider),
+        ),
+      )
+      .returning();
+    if (!updated) throw new RepositoryNotFoundError("AI credential not found");
     return updated;
   }
 }

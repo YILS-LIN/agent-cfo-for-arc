@@ -9,6 +9,10 @@ import {
   IdempotencyKeyRequiredError,
   IdempotencyRequestUnresolvedError,
 } from "@/lib/application/workspace-service";
+import {
+  AiCredentialNotConfiguredError,
+  AiCredentialPermissionError,
+} from "@/lib/ai/credential-service";
 import { authErrorResponse } from "@/lib/auth/server";
 import {
   InternalAuthenticationNotConfiguredError,
@@ -23,6 +27,7 @@ import {
 } from "@/lib/db/repositories";
 import { SyncSourceUnavailableError } from "@/lib/sync/circle-public-adapter";
 import { SyncAdapterNotConfiguredError, SyncPermissionError } from "@/lib/sync/service";
+import { SecretDecryptionError, SecretVaultNotConfiguredError } from "@/lib/secrets/vault";
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof InternalAuthenticationRequiredError) {
@@ -60,6 +65,27 @@ export function apiErrorResponse(error: unknown) {
   }
   if (error instanceof ApplicationPermissionError) {
     return NextResponse.json({ error: error.message, code: "ROLE_FORBIDDEN" }, { status: 403 });
+  }
+  if (error instanceof AiCredentialPermissionError) {
+    return NextResponse.json({ error: error.message, code: "ROLE_FORBIDDEN" }, { status: 403 });
+  }
+  if (error instanceof AiCredentialNotConfiguredError) {
+    return NextResponse.json(
+      { error: error.message, code: "AI_CREDENTIAL_NOT_CONFIGURED" },
+      { status: 422 },
+    );
+  }
+  if (error instanceof SecretVaultNotConfiguredError) {
+    return NextResponse.json(
+      { error: error.message, code: "SECRET_VAULT_NOT_CONFIGURED" },
+      { status: 503 },
+    );
+  }
+  if (error instanceof SecretDecryptionError) {
+    return NextResponse.json(
+      { error: "Stored credential cannot be decrypted", code: "SECRET_DECRYPTION_FAILED" },
+      { status: 500 },
+    );
   }
   if (error instanceof AnalysisLimitExceededError) {
     return NextResponse.json(

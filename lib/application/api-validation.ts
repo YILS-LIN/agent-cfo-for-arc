@@ -107,3 +107,13 @@ export const setProviderPolicyRequestSchema = z.object({
   decision: z.enum(["allowed", "review", "blocked"]),
   expectedVersion: z.number().int().nonnegative(),
 });
+
+export const storeAiCredentialRequestSchema = z.object({
+  secret: z.string().trim().min(20).max(500),
+  model: z.string().trim().min(1).max(120).optional(),
+  expectedVersion: z.number().int().nonnegative(),
+});
+
+export const deleteAiCredentialQuerySchema = z.object({
+  expectedVersion: z.coerce.number().int().positive(),
+});
