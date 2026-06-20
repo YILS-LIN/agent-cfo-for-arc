@@ -3,9 +3,14 @@
 import { PrivyProvider } from "@privy-io/react-auth";
 import type { ReactNode } from "react";
 
+import {
+  AuthenticatedWorkspaceSessionProvider,
+  PublicDemoSessionProvider,
+} from "@/components/auth/workspace-session-provider";
+
 export function PrivyAppProvider({ children }: { children: ReactNode }) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-  if (!appId) return children;
+  if (!appId) return <PublicDemoSessionProvider>{children}</PublicDemoSessionProvider>;
 
   return (
     <PrivyProvider
@@ -19,7 +24,7 @@ export function PrivyAppProvider({ children }: { children: ReactNode }) {
         },
       }}
     >
-      {children}
+      <AuthenticatedWorkspaceSessionProvider>{children}</AuthenticatedWorkspaceSessionProvider>
     </PrivyProvider>
   );
 }

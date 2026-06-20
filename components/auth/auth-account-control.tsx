@@ -1,12 +1,9 @@
 "use client";
 
-import { usePrivy } from "@privy-io/react-auth";
 import { ChevronDown, LogIn, LogOut } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-type SessionContext = {
-  role: "owner" | "operator" | "viewer";
-};
+import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
 
 function initials(value: string) {
   return value
@@ -17,40 +14,32 @@ function initials(value: string) {
     .toUpperCase();
 }
 
-function ConfiguredAuthControl({ fallbackOwner }: { fallbackOwner: string }) {
-  const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
+export function AuthAccountControl({ fallbackOwner }: { fallbackOwner: string }) {
+  const {
+    mode,
+    ready,
+    authenticated,
+    displayName: authenticatedDisplayName,
+    session,
+    sessionError,
+    signIn,
+    signOut,
+  } = useWorkspaceSession();
   const [open, setOpen] = useState(false);
-  const [session, setSession] = useState<SessionContext | null>(null);
-  const [sessionError, setSessionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!ready || !authenticated) return;
-    let cancelled = false;
-    void getAccessToken()
-      .then((token) =>
-        fetch("/api/auth/session", {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          credentials: "include",
-          cache: "no-store",
-        }),
-      )
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to initialize the workspace session");
-        const context = (await response.json()) as SessionContext;
-        if (!cancelled) {
-          setSession(context);
-          setSessionError(null);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setSessionError(error instanceof Error ? error.message : "Session initialization failed");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [authenticated, getAccessToken, ready]);
+  if (mode === "demo") {
+    return (
+      <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-2.5">
+        <span className="flex size-7 items-center justify-center rounded-full bg-blue-soft text-[10px] font-bold text-blue">
+          {initials(fallbackOwner)}
+        </span>
+        <span className="hidden text-left xl:block">
+          <span className="block text-xs font-semibold">{fallbackOwner}</span>
+          <span className="block text-[10px] text-muted">Public demo</span>
+        </span>
+      </div>
+    );
+  }
 
   if (!ready) {
     return <div className="h-10 w-28 animate-pulse rounded-lg border border-line bg-white" />;
@@ -60,14 +49,14 @@ function ConfiguredAuthControl({ fallbackOwner }: { fallbackOwner: string }) {
       <button
         type="button"
         className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue px-3 text-sm font-semibold text-white"
-        onClick={login}
+        onClick={signIn}
       >
         <LogIn className="size-4" /> Sign in
       </button>
     );
   }
 
-  const displayName = user?.google?.name || user?.email?.address || fallbackOwner;
+  const displayName = authenticatedDisplayName || fallbackOwner;
   return (
     <div className="relative">
       <button
@@ -100,7 +89,7 @@ function ConfiguredAuthControl({ fallbackOwner }: { fallbackOwner: string }) {
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-blue-soft"
-            onClick={() => void logout()}
+            onClick={() => void signOut()}
           >
             <LogOut className="size-4" /> Sign out
           </button>
@@ -108,21 +97,4 @@ function ConfiguredAuthControl({ fallbackOwner }: { fallbackOwner: string }) {
       )}
     </div>
   );
-}
-
-export function AuthAccountControl({ fallbackOwner }: { fallbackOwner: string }) {
-  if (!process.env.NEXT_PUBLIC_PRIVY_APP_ID) {
-    return (
-      <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-2.5">
-        <span className="flex size-7 items-center justify-center rounded-full bg-blue-soft text-[10px] font-bold text-blue">
-          {initials(fallbackOwner)}
-        </span>
-        <span className="hidden text-left xl:block">
-          <span className="block text-xs font-semibold">{fallbackOwner}</span>
-          <span className="block text-[10px] text-muted">Public demo</span>
-        </span>
-      </div>
-    );
-  }
-  return <ConfiguredAuthControl fallbackOwner={fallbackOwner} />;
 }
