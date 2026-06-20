@@ -29,7 +29,7 @@ import { SyncSourceUnavailableError } from "@/lib/sync/circle-public-adapter";
 import { SyncAdapterNotConfiguredError, SyncPermissionError } from "@/lib/sync/service";
 import { SecretDecryptionError, SecretVaultNotConfiguredError } from "@/lib/secrets/vault";
 import { AiProviderResponseError } from "@/lib/ai/report-generator";
-import { ReportContentError } from "@/lib/reports/service";
+import { ReportContentError, ReportNotReadyError } from "@/lib/reports/service";
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof InternalAuthenticationRequiredError) {
@@ -88,6 +88,12 @@ export function apiErrorResponse(error: unknown) {
     return NextResponse.json(
       { error: error.message, code: "REPORT_CONTENT_INVALID" },
       { status: 500 },
+    );
+  }
+  if (error instanceof ReportNotReadyError) {
+    return NextResponse.json(
+      { error: error.message, code: "REPORT_NOT_READY" },
+      { status: 409, headers: { "Retry-After": "2" } },
     );
   }
   if (error instanceof SecretVaultNotConfiguredError) {

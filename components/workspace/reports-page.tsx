@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BrainCircuit, CalendarDays, FileText, History, Sparkles } from "lucide-react";
+import { BrainCircuit, CalendarDays, Download, FileText, History, Sparkles } from "lucide-react";
 
 import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
 import { AppShell } from "@/components/dashboard/app-shell";
@@ -118,6 +118,7 @@ export function ReportsPage({ summary }: { summary: AgentSpendSummary }) {
     dateInputValue(new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000)),
   );
   const [generating, setGenerating] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState(
     "Demo report is generated locally from deterministic sample facts.",
   );
@@ -190,6 +191,29 @@ export function ReportsPage({ summary }: { summary: AgentSpendSummary }) {
       setMessage(error instanceof Error ? error.message : "Unable to generate report");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function downloadReport() {
+    if (!selected || selected.status !== "completed") return;
+    setDownloading(true);
+    try {
+      const response = await apiFetch(`/api/reports/${selected.id}/pdf`);
+      if (!response.ok) {
+        setMessage(await getApiErrorMessage(response, "Unable to export report PDF"));
+        return;
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${selected.title.replace(/[^a-zA-Z0-9._-]+/g, "-") || "agent-cfo-report"}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setMessage("Report PDF exported from the persisted workspace record.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to export report PDF");
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -350,6 +374,17 @@ export function ReportsPage({ summary }: { summary: AgentSpendSummary }) {
               title={selected?.title ?? "Report detail"}
               description={
                 selected ? `${selected.provider} · ${selected.model}` : "Select a completed report"
+              }
+              action={
+                selected?.status === "completed" ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => void downloadReport()}
+                    disabled={downloading}
+                  >
+                    <Download className="size-4" /> {downloading ? "Exporting…" : "PDF"}
+                  </Button>
+                ) : undefined
               }
             >
               {selected?.status === "completed" && selected.content ? (

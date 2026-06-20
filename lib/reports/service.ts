@@ -33,6 +33,7 @@ type GeneratedReport = {
 type Generator = { generate(summary: AgentSpendSummary): Promise<GeneratedReport> };
 
 export class ReportContentError extends Error {}
+export class ReportNotReadyError extends Error {}
 
 function requireWriteRole(context: AuthContext) {
   if (context.role === "viewer") {
