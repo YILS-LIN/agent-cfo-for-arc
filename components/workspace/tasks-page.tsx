@@ -42,6 +42,15 @@ type TaskView = {
   detail: string;
 };
 
+type PersistentTaskMetric = {
+  id: string;
+  spent: UsdcAmount;
+  assignedBudget: UsdcAmount;
+  paymentCount: number;
+  share: number;
+  budgetUsed: number;
+};
+
 function statusLabel(status: TaskStatus) {
   return `${status.slice(0, 1).toUpperCase()}${status.slice(1)}`;
 }
@@ -59,6 +68,7 @@ export function TasksPage({ summary }: { summary: AgentSpendSummary }) {
     ),
   );
   const [persistentTasks, setPersistentTasks] = useState<PersistentTask[]>([]);
+  const [persistentMetrics, setPersistentMetrics] = useState<PersistentTaskMetric[]>([]);
   const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(summary.tasks[0]?.id ?? null);
   const [showForm, setShowForm] = useState(false);
@@ -76,25 +86,35 @@ export function TasksPage({ summary }: { summary: AgentSpendSummary }) {
     () =>
       usingPersistentWorkspace
         ? persistentLoaded
-          ? persistentTasks.map((task) => ({
-              id: task.id,
-              name: task.name,
-              status: task.status,
-              amount: "0",
-              budget: "0",
-              paymentCount: 0,
-              share: 0,
-              version: task.version,
-              detail:
-                task.externalKey ?? `Updated ${new Date(task.updatedAt).toLocaleDateString()}`,
-            }))
+          ? persistentTasks.map((task) => {
+              const metric = persistentMetrics.find((item) => item.id === task.id);
+              return {
+                id: task.id,
+                name: task.name,
+                status: task.status,
+                amount: metric?.spent ?? "0",
+                budget: metric?.assignedBudget ?? "0",
+                paymentCount: metric?.paymentCount ?? 0,
+                share: metric?.share ?? 0,
+                version: task.version,
+                detail:
+                  task.externalKey ?? `Updated ${new Date(task.updatedAt).toLocaleDateString()}`,
+              };
+            })
           : []
         : summary.tasks.map((task) => ({
             ...task,
             status: demoStates[task.id] ?? "pending",
             detail: task.id.replace("_", "-"),
           })),
-    [demoStates, persistentLoaded, persistentTasks, summary.tasks, usingPersistentWorkspace],
+    [
+      demoStates,
+      persistentLoaded,
+      persistentMetrics,
+      persistentTasks,
+      summary.tasks,
+      usingPersistentWorkspace,
+    ],
   );
   const tasks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -112,13 +132,20 @@ export function TasksPage({ summary }: { summary: AgentSpendSummary }) {
 
   const loadPersistentTasks = useCallback(
     async (workspaceId: string, signal?: AbortSignal) => {
-      const response = await apiFetch("/api/tasks", { signal });
-      if (!response.ok) {
-        throw new Error(await getApiErrorMessage(response, "Unable to load workspace tasks"));
+      const [tasksResponse, summaryResponse] = await Promise.all([
+        apiFetch("/api/tasks", { signal }),
+        apiFetch("/api/analytics/summary", { signal }),
+      ]);
+      for (const response of [tasksResponse, summaryResponse]) {
+        if (!response.ok) {
+          throw new Error(await getApiErrorMessage(response, "Unable to load workspace tasks"));
+        }
       }
-      const payload = (await response.json()) as { tasks: PersistentTask[] };
+      const payload = (await tasksResponse.json()) as { tasks: PersistentTask[] };
+      const summaryPayload = (await summaryResponse.json()) as { tasks: PersistentTaskMetric[] };
       signal?.throwIfAborted();
       setPersistentTasks(payload.tasks);
+      setPersistentMetrics(summaryPayload.tasks);
       setLoadedWorkspaceId(workspaceId);
       setMessage(
         payload.tasks.length
@@ -137,6 +164,7 @@ export function TasksPage({ summary }: { summary: AgentSpendSummary }) {
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setPersistentTasks([]);
+        setPersistentMetrics([]);
         setLoadedWorkspaceId(session.workspaceId);
         setMessage(error instanceof Error ? error.message : "Unable to load workspace tasks");
       });

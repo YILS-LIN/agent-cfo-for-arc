@@ -42,6 +42,19 @@ type BudgetRow = {
   status?: PersistentBudget["status"];
 };
 
+type PersistentBudgetMetric = {
+  id: string;
+  spent: UsdcAmount;
+  limit: UsdcAmount;
+  paymentCount: number;
+  used: number;
+};
+
+type PersistentBudgetSummary = {
+  metrics: { totalSpend: UsdcAmount; assignedBudget: UsdcAmount; budgetUsed: number };
+  budgets: PersistentBudgetMetric[];
+};
+
 function todayInput() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -52,7 +65,7 @@ function tomorrowInput() {
   return date.toISOString().slice(0, 10);
 }
 
-function persistentBudgetRow(budget: PersistentBudget): BudgetRow {
+function persistentBudgetRow(budget: PersistentBudget, metric?: PersistentBudgetMetric): BudgetRow {
   const scope = budget.taskId
     ? `Task ${budget.taskId.slice(0, 8)}`
     : budget.walletId
@@ -64,7 +77,7 @@ function persistentBudgetRow(budget: PersistentBudget): BudgetRow {
     id: budget.id,
     name: `${scope} · ${budget.periodType}`,
     detail: `${budget.periodStart.slice(0, 10)} → ${budget.periodEnd.slice(0, 10)}`,
-    used: "0",
+    used: metric?.spent ?? "0",
     limit: budget.amount,
     version: budget.version,
     status: budget.status,
@@ -77,6 +90,7 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
     Object.fromEntries(summary.tasks.map((task) => [task.id, task.budget])),
   );
   const [persistentBudgets, setPersistentBudgets] = useState<PersistentBudget[]>([]);
+  const [persistentSummary, setPersistentSummary] = useState<PersistentBudgetSummary | null>(null);
   const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -97,7 +111,12 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
     () =>
       usingPersistentWorkspace
         ? persistentLoaded
-          ? persistentBudgets.map(persistentBudgetRow)
+          ? persistentBudgets.map((budget) =>
+              persistentBudgetRow(
+                budget,
+                persistentSummary?.budgets.find((metric) => metric.id === budget.id),
+              ),
+            )
           : []
         : summary.tasks.map((task) => ({
             id: task.id,
@@ -106,28 +125,53 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
             used: task.amount,
             limit: demoBudgets[task.id] ?? task.budget,
           })),
-    [demoBudgets, persistentBudgets, persistentLoaded, summary.tasks, usingPersistentWorkspace],
+    [
+      demoBudgets,
+      persistentBudgets,
+      persistentLoaded,
+      persistentSummary,
+      summary.tasks,
+      usingPersistentWorkspace,
+    ],
   );
 
   const totalBudget = useMemo(
-    () => rows.reduce((total, row) => total + usdcToNumber(row.limit), 0),
-    [rows],
+    () =>
+      usingPersistentWorkspace && persistentSummary
+        ? usdcToNumber(persistentSummary.metrics.assignedBudget)
+        : rows.reduce((total, row) => total + usdcToNumber(row.limit), 0),
+    [persistentSummary, rows, usingPersistentWorkspace],
   );
   const totalSpend = useMemo(
-    () => rows.reduce((total, row) => total + usdcToNumber(row.used), 0),
-    [rows],
+    () =>
+      usingPersistentWorkspace && persistentSummary
+        ? usdcToNumber(persistentSummary.metrics.totalSpend)
+        : rows.reduce((total, row) => total + usdcToNumber(row.used), 0),
+    [persistentSummary, rows, usingPersistentWorkspace],
   );
-  const used = totalBudget > 0 ? (totalSpend / totalBudget) * 100 : 0;
+  const used =
+    usingPersistentWorkspace && persistentSummary
+      ? persistentSummary.metrics.budgetUsed
+      : totalBudget > 0
+        ? (totalSpend / totalBudget) * 100
+        : 0;
 
   const loadPersistentBudgets = useCallback(
     async (workspaceId: string, signal?: AbortSignal) => {
-      const response = await apiFetch("/api/budgets", { signal });
-      if (!response.ok) {
-        throw new Error(await getApiErrorMessage(response, "Unable to load workspace budgets"));
+      const [budgetsResponse, summaryResponse] = await Promise.all([
+        apiFetch("/api/budgets", { signal }),
+        apiFetch("/api/analytics/summary", { signal }),
+      ]);
+      for (const response of [budgetsResponse, summaryResponse]) {
+        if (!response.ok) {
+          throw new Error(await getApiErrorMessage(response, "Unable to load workspace budgets"));
+        }
       }
-      const payload = (await response.json()) as { budgets: PersistentBudget[] };
+      const payload = (await budgetsResponse.json()) as { budgets: PersistentBudget[] };
+      const summaryPayload = (await summaryResponse.json()) as PersistentBudgetSummary;
       signal?.throwIfAborted();
       setPersistentBudgets(payload.budgets);
+      setPersistentSummary(summaryPayload);
       setLoadedWorkspaceId(workspaceId);
       setMessage(
         payload.budgets.length
@@ -146,6 +190,7 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setPersistentBudgets([]);
+        setPersistentSummary(null);
         setLoadedWorkspaceId(session.workspaceId);
         setMessage(error instanceof Error ? error.message : "Unable to load workspace budgets");
       });

@@ -46,14 +46,26 @@ type PersistentSyncCursor = {
   lastSucceededAt?: string | null;
 };
 
-function toWalletRecord(wallet: PersistentWallet, cursor?: PersistentSyncCursor): WalletRecord {
+type PersistentWalletMetric = {
+  id: string;
+  spent: UsdcAmount;
+  assignedBudget: UsdcAmount;
+  paymentCount: number;
+  budgetUsed: number;
+};
+
+function toWalletRecord(
+  wallet: PersistentWallet,
+  cursor?: PersistentSyncCursor,
+  metric?: PersistentWalletMetric,
+): WalletRecord {
   return {
     id: wallet.id,
     address: wallet.address,
     label: wallet.label,
     network: wallet.chainId === 5_042_002 ? "Arc Testnet" : `Chain ${wallet.chainId}`,
-    budget: "0",
-    spent: "0",
+    budget: metric?.assignedBudget ?? "0",
+    spent: metric?.spent ?? "0",
     primary: wallet.isPrimary,
     syncStatus: cursor?.status ?? "idle",
     syncDetail:
@@ -112,17 +124,21 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
 
   const loadPersistentWallets = useCallback(
     async (workspaceId: string, signal?: AbortSignal) => {
-      const [walletsResponse, syncResponse] = await Promise.all([
+      const [walletsResponse, syncResponse, summaryResponse] = await Promise.all([
         apiFetch("/api/wallets", { signal }),
         apiFetch("/api/sync", { signal }),
+        apiFetch("/api/analytics/summary", { signal }),
       ]);
-      for (const response of [walletsResponse, syncResponse]) {
+      for (const response of [walletsResponse, syncResponse, summaryResponse]) {
         if (!response.ok) {
           throw new Error(await getApiErrorMessage(response, "Unable to load workspace wallets"));
         }
       }
       const payload = (await walletsResponse.json()) as { wallets: PersistentWallet[] };
       const syncPayload = (await syncResponse.json()) as { cursors: PersistentSyncCursor[] };
+      const summaryPayload = (await summaryResponse.json()) as {
+        wallets: PersistentWalletMetric[];
+      };
       signal?.throwIfAborted();
       setPersistentWallets(
         payload.wallets.map((wallet) =>
@@ -131,6 +147,7 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
             syncPayload.cursors.find(
               (cursor) => cursor.walletId === wallet.id && cursor.source === "circle_gateway",
             ),
+            summaryPayload.wallets.find((metric) => metric.id === wallet.id),
           ),
         ),
       );
