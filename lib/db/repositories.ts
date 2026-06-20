@@ -8,6 +8,7 @@ import {
   budgets,
   idempotencyKeys,
   paymentEvents,
+  tasks,
   users,
   wallets,
   workspaceMembers,
@@ -15,11 +16,15 @@ import {
 } from "@/lib/db/schema";
 import {
   createBudgetInputSchema,
+  createTaskInputSchema,
   createWalletInputSchema,
   ingestPaymentInputSchema,
+  updateTaskStatusInputSchema,
   type CreateBudgetInput,
+  type CreateTaskInput,
   type CreateWalletInput,
   type IngestPaymentInput,
+  type UpdateTaskStatusInput,
 } from "@/lib/db/validation";
 
 export class RepositoryNotFoundError extends Error {}
@@ -178,6 +183,72 @@ export class PaymentRepository {
       .limit(1);
     if (!existing) throw new Error("Payment conflict occurred without an existing row");
     return { payment: existing, created: false } as const;
+  }
+}
+
+export class TaskRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async list(scope: WorkspaceScope) {
+    return this.database
+      .select()
+      .from(tasks)
+      .where(eq(tasks.workspaceId, scope.workspaceId))
+      .orderBy(desc(tasks.updatedAt), desc(tasks.createdAt));
+  }
+
+  async getById(scope: WorkspaceScope, taskId: string) {
+    const [task] = await this.database
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.workspaceId, scope.workspaceId), eq(tasks.id, taskId)))
+      .limit(1);
+    return task ?? null;
+  }
+
+  async create(scope: WorkspaceScope, rawInput: CreateTaskInput) {
+    const input = createTaskInputSchema.parse(rawInput);
+    const now = new Date();
+    const [task] = await this.database
+      .insert(tasks)
+      .values({
+        id: randomUUID(),
+        workspaceId: scope.workspaceId,
+        ...input,
+        startedAt: input.status === "running" ? now : undefined,
+        completedAt: input.status === "completed" ? now : undefined,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    if (!task) throw new Error("Task insert returned no row");
+    return task;
+  }
+
+  async updateStatus(scope: WorkspaceScope, rawInput: UpdateTaskStatusInput) {
+    const input = updateTaskStatusInputSchema.parse(rawInput);
+    const now = new Date();
+    const [task] = await this.database
+      .update(tasks)
+      .set({
+        status: input.status,
+        version: sql`${tasks.version} + 1`,
+        updatedAt: now,
+        ...(input.status === "pending" ? { startedAt: null, completedAt: null } : {}),
+        ...(input.status === "running" ? { startedAt: now, completedAt: null } : {}),
+        ...(input.status === "paused" ? { completedAt: null } : {}),
+        ...(input.status === "completed" || input.status === "failed" ? { completedAt: now } : {}),
+      })
+      .where(
+        and(
+          eq(tasks.workspaceId, scope.workspaceId),
+          eq(tasks.id, input.taskId),
+          eq(tasks.version, input.expectedVersion),
+        ),
+      )
+      .returning();
+    if (!task) throw new OptimisticLockError("Task was updated by another request or not found");
+    return task;
   }
 }
 

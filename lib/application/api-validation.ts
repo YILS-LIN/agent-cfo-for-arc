@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { createBudgetInputSchema, createWalletInputSchema } from "@/lib/db/validation";
+import {
+  createBudgetInputSchema,
+  createTaskInputSchema,
+  createWalletInputSchema,
+  updateTaskStatusInputSchema,
+} from "@/lib/db/validation";
 
 export const createWalletRequestSchema = createWalletInputSchema;
 
@@ -29,3 +34,6 @@ export const updateBudgetRequestSchema = z.object({
 export const updateWalletRequestSchema = z.object({
   isPrimary: z.literal(true),
 });
+
+export const createTaskRequestSchema = createTaskInputSchema;
+export const updateTaskStatusRequestSchema = updateTaskStatusInputSchema.omit({ taskId: true });

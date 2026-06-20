@@ -5,9 +5,11 @@ import {
   BudgetRepository,
   IdempotencyRepository,
   RepositoryNotFoundError,
+  TaskRepository,
   WalletRepository,
 } from "@/lib/db/repositories";
 import type { CreateBudgetInput, CreateWalletInput } from "@/lib/db/validation";
+import type { CreateTaskInput, UpdateTaskStatusInput } from "@/lib/db/validation";
 
 export class ApplicationPermissionError extends Error {}
 export class IdempotencyKeyRequiredError extends Error {}
@@ -35,12 +37,14 @@ export class WorkspaceApplicationService {
   private readonly budgets: BudgetRepository;
   private readonly audits: AuditRepository;
   private readonly idempotency: IdempotencyRepository;
+  private readonly tasks: TaskRepository;
 
   constructor(private readonly database: AppDatabase) {
     this.wallets = new WalletRepository(database);
     this.budgets = new BudgetRepository(database);
     this.audits = new AuditRepository(database);
     this.idempotency = new IdempotencyRepository(database);
+    this.tasks = new TaskRepository(database);
   }
 
   listWallets(context: AuthContext) {
@@ -112,6 +116,90 @@ export class WorkspaceApplicationService {
 
   listBudgets(context: AuthContext) {
     return this.budgets.list(context);
+  }
+
+  listTasks(context: AuthContext) {
+    return this.tasks.list(context);
+  }
+
+  async createTask(
+    context: AuthContext,
+    input: CreateTaskInput,
+    idempotencyKey: string,
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    const key = normalizeIdempotencyKey(idempotencyKey);
+    const claim = await this.idempotency.claim(context, {
+      operation: "task.create",
+      key,
+      request: input,
+    });
+    if (claim.state === "completed") {
+      const taskId = claim.record.response?.taskId;
+      if (typeof taskId !== "string")
+        throw new RepositoryNotFoundError("Stored task response is invalid");
+      const task = await this.tasks.getById(context, taskId);
+      if (!task) throw new RepositoryNotFoundError("Stored task no longer exists");
+      return { task, replayed: true } as const;
+    }
+    if (claim.state !== "claimed") {
+      throw new IdempotencyRequestUnresolvedError(
+        "A request with this idempotency key is still unresolved",
+      );
+    }
+
+    try {
+      const task = await this.database.transaction(async (transaction) => {
+        const tasks = new TaskRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const idempotency = new IdempotencyRepository(transaction);
+        const created = await tasks.create(context, input);
+        await audits.record(context, {
+          actorUserId: context.userId,
+          action: "task.created",
+          entityType: "task",
+          entityId: created.id,
+          source,
+          idempotencyKey: key,
+          payload: { name: created.name, status: created.status, walletId: created.walletId },
+        });
+        await idempotency.complete(context, {
+          id: claim.record.id,
+          response: { taskId: created.id },
+        });
+        return created;
+      });
+      return { task, replayed: false } as const;
+    } catch (error) {
+      await this.idempotency.fail(context, {
+        id: claim.record.id,
+        errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+      });
+      throw error;
+    }
+  }
+
+  async updateTaskStatus(
+    context: AuthContext,
+    input: UpdateTaskStatusInput,
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    return this.database.transaction(async (transaction) => {
+      const tasks = new TaskRepository(transaction);
+      const audits = new AuditRepository(transaction);
+      const task = await tasks.updateStatus(context, input);
+      await audits.record(context, {
+        actorUserId: context.userId,
+        action: "task.status_updated",
+        entityType: "task",
+        entityId: task.id,
+        source,
+        payload: { status: task.status, version: task.version },
+      });
+      return task;
+    });
   }
 
   async setPrimaryWallet(context: AuthContext, walletId: string, source: MutationSource = "web") {

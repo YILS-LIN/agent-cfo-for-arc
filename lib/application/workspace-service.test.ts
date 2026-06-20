@@ -15,7 +15,7 @@ import {
   OptimisticLockError,
   WorkspaceRepository,
 } from "@/lib/db/repositories";
-import { auditEvents, budgets, idempotencyKeys, wallets } from "@/lib/db/schema";
+import { auditEvents, budgets, idempotencyKeys, tasks, wallets } from "@/lib/db/schema";
 import { createTestDatabase } from "@/lib/db/testing";
 
 type TestDatabase = Awaited<ReturnType<typeof createTestDatabase>>;
@@ -153,6 +153,36 @@ describe("WorkspaceApplicationService", () => {
       }),
     ).rejects.toBeInstanceOf(OptimisticLockError);
     await expect(database.select().from(budgets)).resolves.toHaveLength(1);
+    await expect(database.select().from(auditEvents)).resolves.toHaveLength(2);
+  });
+
+  it("creates and replays tasks, then protects status updates with versions", async () => {
+    const first = await service.createTask(
+      owner,
+      { name: "Research suppliers", status: "running", externalKey: "task-external-1" },
+      "task-request-1",
+    );
+    const replay = await service.createTask(
+      owner,
+      { externalKey: "task-external-1", status: "running", name: "Research suppliers" },
+      "task-request-1",
+    );
+    const updated = await service.updateTaskStatus(owner, {
+      taskId: first.task.id,
+      expectedVersion: 1,
+      status: "paused",
+    });
+
+    expect(replay).toMatchObject({ replayed: true, task: { id: first.task.id } });
+    expect(updated).toMatchObject({ status: "paused", version: 2 });
+    await expect(
+      service.updateTaskStatus(owner, {
+        taskId: first.task.id,
+        expectedVersion: 1,
+        status: "completed",
+      }),
+    ).rejects.toBeInstanceOf(OptimisticLockError);
+    await expect(database.select().from(tasks)).resolves.toHaveLength(1);
     await expect(database.select().from(auditEvents)).resolves.toHaveLength(2);
   });
 

@@ -15,6 +15,13 @@
       "when": 1781945933962,
       "tag": "0001_pink_tiger_shark",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781961986809,
+      "tag": "0002_smart_metal_master",
+      "breakpoints": true
     }
   ]
 }

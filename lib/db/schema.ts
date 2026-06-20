@@ -213,6 +213,7 @@ export const tasks = pgTable(
     externalKey: text("external_key"),
     name: text("name").notNull(),
     status: taskStatusEnum("status").notNull().default("pending"),
+    version: integer("version").notNull().default(1),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
