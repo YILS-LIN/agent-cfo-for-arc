@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Briefcase,
   CircleDollarSign,
+  FileText,
   Home,
   Settings,
   ShieldCheck,
@@ -24,6 +25,7 @@ export const navigationItems = [
   { label: "Budgets", href: "/budgets", icon: ShieldCheck },
   { label: "Risks", href: "/risks", icon: AlertTriangle },
   { label: "Tasks", href: "/tasks", icon: Briefcase },
+  { label: "Reports", href: "/reports", icon: FileText },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -67,7 +69,7 @@ export function Sidebar() {
           <Target className="size-8 text-blue" strokeWidth={2.4} />
         </Link>
         <nav
-          className="flex w-full flex-1 flex-col items-center gap-2"
+          className="flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto py-1"
           aria-label="Primary navigation"
         >
           <NavigationLinks />
