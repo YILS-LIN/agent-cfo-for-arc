@@ -330,4 +330,16 @@ export class IdempotencyRepository {
     if (!record) throw new RepositoryNotFoundError("Idempotency record not found");
     return record;
   }
+
+  async fail(scope: WorkspaceScope, input: { id: string; errorCode: string }) {
+    const [record] = await this.database
+      .update(idempotencyKeys)
+      .set({ status: "failed", response: { errorCode: input.errorCode } })
+      .where(
+        and(eq(idempotencyKeys.workspaceId, scope.workspaceId), eq(idempotencyKeys.id, input.id)),
+      )
+      .returning();
+    if (!record) throw new RepositoryNotFoundError("Idempotency record not found");
+    return record;
+  }
 }
