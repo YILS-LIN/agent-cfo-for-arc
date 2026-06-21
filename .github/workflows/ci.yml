@@ -34,4 +34,5 @@ jobs:
       - run: pnpm test:e2e
       - run: pnpm security:audit
       - run: pnpm build
+      - run: pnpm performance:check
       - run: docker build --target runner --tag agent-cfo-for-arc:ci .

@@ -34,6 +34,7 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "performance:check": "node scripts/check-performance.mjs",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "security:audit": "pnpm audit --prod --audit-level high --registry=https://registry.npmjs.org",
