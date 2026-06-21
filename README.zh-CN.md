@@ -1,381 +1,142 @@
 # Agent CFO for Arc
 
-<p align="center">
-  <strong>Arc 上自主 AI Agent 的实时花销智能控制台。</strong>
-</p>
+<p align="center"><strong>面向 Arc 自主 Agent 的支出智能与财务控制工作区。</strong></p>
 
 <p align="center">
-  Every autonomous agent needs a CFO.
+  <a href="./README.md">English</a> · <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
-<p align="center">
-  <a href="./README.md">English</a> ·
-  <a href="./README.zh-CN.md">简体中文</a> ·
-  <a href="#demo-流程">Demo</a> ·
-  <a href="#架构">架构</a> ·
-  <a href="#路线图">路线图</a>
-</p>
+Agent CFO 将 USDC 支付事件转化为租户隔离的财务工作区，包括仪表盘、任务与服务商成本归因、预算、风险信号、可审计策略和 CFO 风格报告。公开体验保持确定性且无需凭证；登录后的工作区会将金融事实持久化到 PostgreSQL。
 
-<p align="center">
-  <img alt="Status" src="https://img.shields.io/badge/status-MVP-blue">
-  <img alt="Built for Arc" src="https://img.shields.io/badge/built%20for-Arc-7C3AED">
-  <img alt="Payments" src="https://img.shields.io/badge/payments-USDC-2775CA">
-  <img alt="Agent" src="https://img.shields.io/badge/agent-autonomous-111827">
-</p>
+## 已实现能力
 
-Agent CFO for Arc 是一个面向自主 AI Agent 的实时花销智能控制台。用户输入 Agent 钱包地址后，可以看懂这个 Agent 在 Arc 上的 USDC 都花到了哪里：购买了哪些服务、每个任务花费多少、哪些服务商收款最多、是否超出预算，以及是否存在异常或低效支出。
+- 数据驱动的支出趋势与活动图表、入场动画、减弱动画支持和响应式布局。
+- Privy 登录、工作区成员关系，以及 owner、editor、viewer 角色。
+- 租户隔离的钱包、支付、任务、预算、服务商策略、风险、同步游标、报告、审计和幂等记录。
+- 精确十进制 USDC 计算、乐观并发、重放保护、同步租约和失败恢复。
+- 加密保存工作区 OpenAI 凭据，并通过 BYOK 生成结构化报告。
+- 使用内嵌 CJK 字体、经过渲染验证的中英文 PDF 导出。
+- 受 OAuth 保护的远程 MCP 工具，支持摘要、风险、服务商策略和报告。
+- 安全响应头、来源校验、请求体限制、PostgreSQL 分布式限流、请求 ID、结构化日志、存活与就绪探针。
+- Docker standalone 运行镜像、迁移目标、CI 门禁、浏览器 E2E、WCAG 扫描、依赖审计和生产延迟检查。
+- 带完整性校验的 PostgreSQL 备份，以及必须明确确认目标库的恢复命令。
 
-它不只是展示原始钱包交易，而是把 x402 和微支付活动转化成人类可读的 Agent 财务报告。
+## 真实集成边界
 
-## 目录
+默认公开工作区使用确定性数据。独立的公开证据路径可验证声明过的 Circle Gateway / Arc Testnet 样本；系统不会声称能够发现任意钱包的链上活动。
 
-- [项目概览](#项目概览)
-- [为什么需要 Agent CFO](#为什么需要-agent-cfo)
-- [核心功能](#核心功能)
-- [Demo 流程](#demo-流程)
-- [示例报告](#示例报告)
-- [架构](#架构)
-- [工作原理](#工作原理)
-- [Lepton 黑客松适配](#lepton-黑客松适配)
-- [技术栈](#技术栈)
-- [快速开始](#快速开始)
-- [项目结构](#项目结构)
-- [路线图](#路线图)
-- [使用场景](#使用场景)
-- [项目定位](#项目定位)
-
-## 项目概览
-
-自主 AI Agent 正在成为具备经济行为的软件实体。它们可以自动为 API 调用、数据源、模型服务、算力、存储、内容授权、创作者素材和其他 Agent 服务付费。
-
-这带来了新的信任问题：当 Agent 开始自动花钱之后，用户需要知道它到底买了什么、为什么付款、钱花得是否高效，以及是否遵守了预算。
-
-Agent CFO for Arc 为这套 Agent 经济提供财务可观测性层。
-
-```txt
-Agent 钱包：0xA12...89F
-累计支出：0.1842 USDC
-支付笔数：186
-平均单笔：0.00099 USDC
-最高类别：数据 API
-预算状态：已使用 72%
-风险等级：中等
-```
-
-## 为什么需要 Agent CFO
-
-传统钱包浏览器只能展示交易，无法解释自主 Agent 的行为。
-
-Agent CFO 回答的是原始交易列表无法回答的问题：
-
-- Agent 到底买了什么？
-- 哪些服务商收到了最多付款？
-- 每个任务具体花了多少钱？
-- Agent 是否遵守预算？
-- 是否存在重复、低效或可疑付款？
-- 下次任务前应该优化什么？
-
-## 核心功能
-
-### 实时 Agent 支出看板
-
-追踪自主 Agent 钱包的实时 USDC 支出，包括总支出、支付笔数、平均单笔金额、预算使用情况、主要服务商、最高支出类别和风险等级。
-
-### 人类可读的支付时间线
-
-将底层支付活动转化为可读事件。
-
-```txt
-12:04:11  支付 0.001 USDC  -> 研究 API
-12:04:16  支付 0.003 USDC  -> 高级数据集
-12:04:21  支付 0.0005 USDC -> 记忆存储
-12:04:32  支付 0.008 USDC  -> 图像模型
-```
-
-### 任务级成本归因
-
-按照 Agent 任务聚合付款，并解释每个任务的实际成本。
-
-```txt
-任务：研究创作者支付工具
-预算：0.05 USDC
-已花费：0.037 USDC
-状态：预算内
-```
-
-### 预算监控
-
-追踪 Agent 是否处于预算内、接近上限、超出预算，或出现异常支出加速。
-
-### 支出分类
-
-将付款归类为数据 API、模型调用、计算资源、存储服务、创作者内容、搜索服务、摘要服务和其他 Agent 服务。
-
-### 风险与效率分析
-
-检测重复购买、重复访问同一数据集、使用意外服务商、过多小额支付、预算超支和支出过度集中等问题。
-
-### 自然语言财务报告
-
-生成 CFO 风格的自然语言报告，用普通语言解释 Agent 的支出行为。
-
-```txt
-该 Agent 在预算内完成了任务，共花费 0.037 USDC，预算上限为 0.05 USDC。
-主要成本来自付费数据 API 和摘要服务。
-最大的低效支出来自对同一个高级数据集的重复访问。
-如果加入缓存层，未来同类任务成本预计可降低约 31%。
-```
-
-## Demo 流程
-
-项目设计上会配套一个 Demo 研究 Agent，用于展示从自主任务执行、自主支付到用户侧花销分析的完整生命周期。
-
-```txt
-用户输入研究任务
-        ↓
-用户分配预算，例如 0.05 USDC
-        ↓
-Agent 调用多个受 x402 保护的服务
-        ↓
-每次服务调用都会触发一笔微支付
-        ↓
-Agent CFO 实时展示这些付款
-        ↓
-Agent CFO 生成花销报告
-```
-
-示例任务：
-
-```txt
-任务：研究创作者支付工具
-预算：0.05 USDC
-已花费：0.037 USDC
-
-步骤 1：支付搜索 API
-步骤 2：支付高级文章源
-步骤 3：支付摘要 API
-步骤 4：支付引用来源
-```
-
-## 示例报告
-
-```txt
-Agent CFO 花销报告
-
-Agent 钱包：
-0xA12...89F
-
-任务：
-研究创作者支付工具
-
-预算：
-0.05 USDC
-
-累计支出：
-0.037 USDC
-
-预算使用率：
-74%
-
-支付笔数：
-23
-
-平均单笔：
-0.0016 USDC
-
-最高支出类别：
-数据 API
-
-主要服务商：
-研究 API
-
-风险等级：
-中等
-
-总结：
-该 Agent 在预算内完成了任务。主要支出流向数据 API、高级文章访问和摘要服务。
-其中某个服务商被多次用于获取相似数据，说明存在缓存优化空间。
-
-建议：
-缓存重复数据集响应，预计可将未来同类任务成本降低约 31%。
-```
+持久化数据可通过认证 API、内部摄取 API 和同步适配器写入。生产环境仍需由部署者配置真实 Arc/Circle 适配器、服务商凭据和运行环境。预算目前用于监控、分析和告警，不会签名或阻断链上交易。
 
 ## 架构
 
-```txt
-Demo 研究 Agent
-        ↓
-x402 保护服务
-        ↓
-Arc 上的 USDC 微支付
-        ↓
-支付事件索引器
-        ↓
-支出分类引擎
-        ↓
-预算与风险分析器
-        ↓
-Agent CFO 控制台
-        ↓
-人类可读的财务报告
+```text
+Privy / OAuth 身份
+        │
+        ▼
+Next.js 应用与 MCP 资源服务器
+        │
+        ├── 工作区应用服务
+        ├── 精确支出分析与风险引擎
+        ├── 加密 BYOK 报告生成与 PDF 导出
+        └── Arc / Circle / x402 摄取适配器
+        │
+        ▼
+PostgreSQL 租户数据、审计、幂等、租约与限流
 ```
 
-Arc 提供结算层，Agent CFO 提供可视化、解释和信任层。
+所有持久化仓储读写都必须携带工作区作用域。写操作同时执行角色检查、输入校验、幂等处理、审计和事务更新。
 
-## 工作原理
+## 本地公开 Demo
 
-1. 用户输入自主 Agent 的钱包地址。
-2. Agent CFO 获取或监听该钱包关联的支付活动。
-3. 系统使用服务商元数据和服务类别增强付款信息。
-4. 系统按照任务、服务商、类别和时间聚合付款。
-5. 系统计算预算使用情况和风险信号。
-6. 系统生成自然语言报告，解释发生了什么以及如何优化。
-
-## Lepton 黑客松适配
-
-Agent CFO 面向 Canteen × Circle × Arc 的 Lepton Agents Hackathon 构建。
-
-它主要对应：
-
-- **RFB 01：Autonomous Paying Agents** - 为会自主发现并购买 x402 资源的 Agent 提供预算与花销智能层。
-- **RFB 05：Nanopayment Infrastructure & Tooling** - 为 nanopayment Agent 提供可观测、可调试、可演示的 dashboard 和模拟器。
-
-当前 MVP 使用确定性的 demo adapter，方便评审无需凭证即可完整点击体验。真实 Arc/Circle 集成边界保留在 `lib/arc/client.ts`，后续可接入：
-
-- ARC CLI：获取 Arc testnet RPC 与链上下文。
-- Circle CLI / Agent Stack：管理 Agent 钱包与 x402-compatible payment。
-- Gateway/Nanopayments：读取批量 USDC nanopayment telemetry。
-
-> **真实性说明（2026-06-20）**：默认体验使用确定性 Demo 数据；页面同时提供一个公开可验证样本，通过 Circle Gateway API 与 Arc Testnet RPC 读取两笔真实 x402 settlement。系统不会把其他任意地址伪装成已完成链上分析；通用钱包同步与持久化仍在开发中。Monitoring Budget 只生成分析和提醒，不会阻止链上交易。
-
-## 技术栈
-
-- Next.js App Router
-- React
-- TypeScript
-- Tailwind CSS v4
-- Zustand-ready 客户端架构
-- Lucide 图标系统
-- 离线可演示的 deterministic mock Arc adapter
-- 纯 TypeScript 分析模块：支出分类、预算分析、风险检测、任务归因和 CFO 报告生成
-
-## 快速开始
-
-要求：
-
-- Node.js 22.17+ 推荐
-- pnpm 10.12+
-
-本地运行：
+要求：Node.js 22.17+、pnpm 10.12+。
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开 `http://localhost:3000`。
+打开 `http://localhost:3000`。公开 Demo 不需要凭据或数据库。
 
-常用验证命令：
+## 持久化环境
+
+将 `.env.example` 复制为 `.env.local`，并配置：
+
+- PostgreSQL `DATABASE_URL` 和高强度内部/限流密钥。
+- 32 字节 base64 加密密钥及其 key ID。
+- Privy app ID、app secret 和 verification key。
+- HTTPS 站点地址与 MCP 地址。
+- OAuth issuer、JWKS、audience、claims 和 MCP 允许来源。
+
+然后执行迁移并启动：
 
 ```bash
-pnpm typecheck
+pnpm db:migrate
+pnpm dev
+```
+
+OpenAI 采用 BYOK：owner 或 editor 在设置页保存密钥。明文密钥会先加密再持久化，元数据 API 永远不会返回明文。
+
+## 远程 MCP
+
+Streamable HTTP 端点为 `/mcp`，受保护资源元数据位于 `/.well-known/oauth-protected-resource/mcp`。授权服务器签发的 JWT access token 必须包含已配置的 audience、scope、Privy subject claim 和 workspace claim。工具执行前还会重新查询 PostgreSQL 成员关系。
+
+可用 scope：
+
+- `agent-cfo:read`：读取摘要和报告。
+- `agent-cfo:write`：执行风险分析和服务商策略变更。
+- `agent-cfo:reports`：生成报告。
+
+## 验证命令
+
+```bash
+pnpm format:check
 pnpm lint
+pnpm typecheck
 pnpm test
+pnpm test:e2e
+pnpm security:audit
 pnpm build
+pnpm verify:standalone
+pnpm performance:check
+pnpm db:recovery:check
 ```
 
-Demo 操作：
+Playwright 覆盖桌面端和移动端公开流程、页面导航、控制台错误、WCAG A/AA、减弱动画与视口溢出。性能门禁会启动生产 standalone 服务，检查存活接口与首页 SSR 的错误率和 p95 延迟。
 
-- 使用页面预置的 Demo wallet address，或点击 **Use verified Arc sample** 填入公开证据钱包。
-- 点击 **Analyze Wallet**，通过 `/api/agents/[wallet]/summary` 计算 Demo 或核验 Circle Gateway + Arc Testnet 数据；其他地址会明确提示通用 Live Adapter 尚未配置。
-- 点击 **Run Demo Agent**，模拟一个研究 Agent 生成 x402 风格支付事件。
-- 查看 KPI、Spend Flow、Recent Payments、风险信号、任务摘要和 AI Insight。
+## 容器部署
 
-完整工作台页面：
-
-- **Overview**：钱包分析、KPI、支出流、风险和 AI CFO 建议。
-- **Wallets**：连接钱包、切换主钱包、复制地址并进入分析。
-- **Spend**：检索和筛选完整支付账本，导出 CSV。
-- **Providers**：查看服务商集中度，并模拟本地 allow/flag 状态。
-- **Budgets**：编辑 Demo 任务预算和监控阈值，不执行链上强制限制。
-- **Risks**：按严重度筛选，将信号推进到调查或解决状态。
-- **Tasks**：查看任务成本归因并模拟任务状态，不控制外部 Agent。
-- **Settings**：配置通知、安全策略、Webhook 和数据保留，并导出设置。
-
-## 项目结构
-
-```txt
-.
-├── app/                  # Next.js 路由、API 路由、元数据和全局样式
-├── components/
-│   ├── dashboard/        # Agent CFO dashboard 组件
-│   ├── workspace/        # Wallets、Spend、Providers 等业务页面
-│   └── ui/               # 通用 UI primitives
-├── lib/
-│   ├── analytics/        # 支出分类、预算、任务和风险逻辑
-│   ├── arc/              # demo Arc/Circle 集成 adapter 边界
-│   ├── demo/             # 黑客松 demo 支付事件流
-│   ├── domain/           # 精确 USDC 金额与领域规则
-│   ├── reports/          # CFO 风格报告生成
-│   └── utils.ts
-├── types/                # 共享领域类型
-└── README.md
+```bash
+docker build --target runner -t agent-cfo-for-arc .
+docker build --target migrate -t agent-cfo-for-arc-migrate .
+docker run --env-file .env.production agent-cfo-for-arc-migrate
+docker run --env-file .env.production -p 3000:3000 agent-cfo-for-arc
 ```
 
-## 路线图
+每次发布先运行一次迁移目标，再滚动发布应用目标。运行镜像使用非 root 用户，并通过 `/api/health/ready` 检查就绪状态。
 
-- [x] Agent 钱包地址输入
-- [x] 模拟支付时间线
-- [x] 总支出与支付笔数
-- [x] 预算使用情况追踪
-- [x] 服务商与类别拆分
-- [x] 任务级成本总结
-- [x] 基础异常与低效支出检测
-- [x] 自然语言花销报告
-- [x] 使用 x402 风格付费服务调用的 Demo 研究 Agent
-- [x] 多钱包管理和主钱包切换 UI Demo
-- [x] 完整支付账本筛选与 CSV 导出
-- [x] 服务商准入、任务预算和支付 guardrail UI Demo
-- [x] 风险调查/解决工作流和任务启停 UI Demo
-- [x] 通知、安全、Webhook 和数据保留设置 UI Demo
-- [x] 精确 USDC 对账与自动化测试
-- [x] Circle Gateway settlement + Arc Testnet 批次交易公开证据
-- [ ] 真实 Arc/Circle adapter
-- [ ] 钱包、支付与预算持久化
-- [ ] 可导出的 CFO 报告
-- [ ] 多 Agent 组合视图
+## 数据库恢复
 
-## 使用场景
+以下命令需要 PostgreSQL 客户端工具：
 
-### Agent 运营者
-
-理解自主 Agent 正在把钱花在哪里，以及其运行是否高效。
-
-### 开发者
-
-调试付费 Agent 工作流，并识别昂贵的服务调用。
-
-### 协议生态
-
-为机器到机器支付提供更高层级的分析能力。
-
-### 用户
-
-在允许 AI Agent 自主花钱之前建立信任。
-
-## 项目定位
-
-Agent CFO for Arc 不是普通钱包浏览器。
-
-它也不是另一个支付协议。
-
-它是 Arc 上自主 AI Agent 的财务可观测性层。
-
-```txt
-Arc 是结算层。
-Agent CFO 是信任层和智能解释层。
+```bash
+DATABASE_URL='postgresql://…' pnpm db:backup
+RESTORE_DATABASE_URL='postgresql://…' \
+  pnpm db:restore -- --backup backups/name.dump --confirm host/database
 ```
 
-## 标语
+备份采用 PostgreSQL custom format，并生成 SHA-256 manifest。恢复时会先校验完整性，要求逐字确认目标 `host/database`，并在单个事务中执行替换。任何生产恢复前，都应先对一次性数据库完成恢复演练。
 
-**Agent CFO for Arc：让每一个会花钱的 AI Agent，都拥有自己的财务官。**
+## 关键目录
+
+```text
+app/          页面、API、健康探针与 MCP transport
+components/   仪表盘、工作区、认证与报告 UI
+lib/          领域、仓储、服务、安全、AI、MCP 与适配器
+drizzle/      版本化 PostgreSQL migration
+e2e/          Playwright 公开工作区验收测试
+scripts/      部署、性能、备份与恢复验证
+```
+
+## 许可证
+
+[MIT](./LICENSE)
