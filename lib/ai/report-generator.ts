@@ -1,7 +1,7 @@
 import "server-only";
 
-import OpenAI from "openai";
-import { zodTextFormat } from "openai/helpers/zod";
+import { createOpenAI } from "@ai-sdk/openai";
+import { APICallError, NoOutputGeneratedError, Output, RetryError, generateText } from "ai";
 import { z } from "zod";
 
 import type { AgentSpendSummary } from "@/types/agent";
@@ -41,14 +41,21 @@ export class AiProviderResponseError extends Error {
   }
 }
 
-type ParsedResponse = {
+type StructuredResponse = {
   id: string;
-  output_parsed: AiReportContent | null;
+  output: AiReportContent | null;
   usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number } | null;
 };
 
-type ResponsesClient = {
-  parse(input: Record<string, unknown>): Promise<ParsedResponse>;
+type StructuredClient = {
+  generate(input: {
+    model: string;
+    system: string;
+    prompt: string;
+    store: false;
+    reasoningEffort: "low";
+    textVerbosity: "low";
+  }): Promise<StructuredResponse>;
 };
 
 function reportFacts(summary: AgentSpendSummary) {
@@ -85,56 +92,78 @@ function reportFacts(summary: AgentSpendSummary) {
 }
 
 export class OpenAiReportGenerator {
-  private readonly responses: ResponsesClient;
+  private readonly client: StructuredClient;
 
   constructor(
     apiKey: string,
     private readonly model: string,
-    responses?: ResponsesClient,
+    client?: StructuredClient,
   ) {
-    this.responses =
-      responses ??
-      (new OpenAI({ apiKey, timeout: 45_000, maxRetries: 2 })
-        .responses as unknown as ResponsesClient);
+    const provider = createOpenAI({ apiKey });
+    this.client =
+      client ??
+      ({
+        generate: async (input) => {
+          const result = await generateText({
+            model: provider.responses(input.model),
+            output: Output.object({ schema: aiReportContentSchema }),
+            system: input.system,
+            prompt: input.prompt,
+            maxRetries: 2,
+            timeout: 45_000,
+            providerOptions: {
+              openai: {
+                store: input.store,
+                reasoningEffort: input.reasoningEffort,
+                textVerbosity: input.textVerbosity,
+              },
+            },
+          });
+          return {
+            id: result.response.id,
+            output: result.output,
+            usage: {
+              input_tokens: result.usage.inputTokens,
+              output_tokens: result.usage.outputTokens,
+              total_tokens: result.usage.totalTokens,
+            },
+          };
+        },
+      } satisfies StructuredClient);
   }
 
   async generate(summary: AgentSpendSummary) {
     try {
-      const response = await this.responses.parse({
+      const response = await this.client.generate({
         model: this.model,
         store: false,
-        reasoning: { effort: "low" },
-        text: {
-          verbosity: "low",
-          format: zodTextFormat(aiReportContentSchema, "agent_cfo_report"),
-        },
-        input: [
-          {
-            role: "system",
-            content:
-              "Produce a concise CFO report from the supplied financial facts. Every numeric claim must be directly supported by those facts. Do not invent causes, savings, payment authorization, or enforcement. Put uncertainty and missing context in caveats.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify(reportFacts(summary)),
-          },
-        ],
+        reasoningEffort: "low",
+        textVerbosity: "low",
+        system:
+          "Produce a concise CFO report from the supplied financial facts. Every numeric claim must be directly supported by those facts. Do not invent causes, savings, payment authorization, or enforcement. Put uncertainty and missing context in caveats.",
+        prompt: JSON.stringify(reportFacts(summary)),
       });
-      if (!response.output_parsed) {
+      if (!response.output) {
         throw new AiProviderResponseError("OpenAI returned no structured report", "invalid_output");
       }
       return {
-        content: aiReportContentSchema.parse(response.output_parsed),
+        content: aiReportContentSchema.parse(response.output),
         responseId: response.id,
         usage: response.usage ?? undefined,
       };
     } catch (error) {
       if (error instanceof AiProviderResponseError) throw error;
-      if (error instanceof OpenAI.AuthenticationError) {
-        throw new AiProviderResponseError("OpenAI credential was rejected", "authentication");
+      const cause = RetryError.isInstance(error) ? error.lastError : error;
+      if (NoOutputGeneratedError.isInstance(cause)) {
+        throw new AiProviderResponseError("OpenAI returned no structured report", "invalid_output");
       }
-      if (error instanceof OpenAI.RateLimitError) {
-        throw new AiProviderResponseError("OpenAI rate limit was reached", "rate_limit");
+      if (APICallError.isInstance(cause)) {
+        if (cause.statusCode === 401 || cause.statusCode === 403) {
+          throw new AiProviderResponseError("OpenAI credential was rejected", "authentication");
+        }
+        if (cause.statusCode === 429) {
+          throw new AiProviderResponseError("OpenAI rate limit was reached", "rate_limit");
+        }
       }
       throw new AiProviderResponseError("OpenAI report generation failed", "unavailable");
     }

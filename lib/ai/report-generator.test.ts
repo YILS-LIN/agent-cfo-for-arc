@@ -19,9 +19,9 @@ describe("OpenAiReportGenerator", () => {
   it("requests non-retained structured output and returns validated content", async () => {
     let request: Record<string, unknown> | undefined;
     const generator = new OpenAiReportGenerator("test-key", "gpt-test", {
-      async parse(input) {
+      async generate(input) {
         request = input;
-        return { id: "resp_123", output_parsed: content, usage: { total_tokens: 42 } };
+        return { id: "resp_123", output: content, usage: { total_tokens: 42 } };
       },
     });
 
@@ -33,14 +33,15 @@ describe("OpenAiReportGenerator", () => {
     expect(request).toMatchObject({
       model: "gpt-test",
       store: false,
-      reasoning: { effort: "low" },
+      reasoningEffort: "low",
+      textVerbosity: "low",
     });
   });
 
   it("rejects a response without parsed structured output", async () => {
     const generator = new OpenAiReportGenerator("test-key", "gpt-test", {
-      async parse() {
-        return { id: "resp_empty", output_parsed: null };
+      async generate() {
+        return { id: "resp_empty", output: null };
       },
     });
 
