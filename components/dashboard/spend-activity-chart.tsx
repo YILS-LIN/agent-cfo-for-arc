@@ -1,149 +1,159 @@
-import type { PaymentEvent } from "@/types/payment";
-import { buildSpendActivityPoints } from "@/lib/analytics/chart-series";
-import { formatCurrency } from "@/lib/utils";
+"use client";
+
+import { useId, useState } from "react";
+import {
+  Area,
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import { MotionCard } from "@/components/dashboard/motion-card";
+import { usePrefersReducedMotion } from "@/lib/client/reduced-motion";
+import { cn, formatCurrency } from "@/lib/utils";
+import type { SpendActivityPoint } from "@/types/agent";
+
+type Measure = "amount" | "payments";
+
+function formatAxisAmount(value: number) {
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}k`;
+  return `$${Math.round(value)}`;
+}
 
 export function SpendActivityChart({
-  payments,
+  activity,
   from,
   to,
 }: {
-  payments: PaymentEvent[];
+  activity: SpendActivityPoint[];
   from: string;
   to: string;
 }) {
-  const points = buildSpendActivityPoints(payments, from, to);
-  const width = 720;
-  const height = 230;
-  const left = 54;
-  const right = 18;
-  const top = 20;
-  const bottom = 42;
-  const plotWidth = width - left - right;
-  const plotHeight = height - top - bottom;
-  const max = Math.max(...points.map((point) => point.value), 0);
-  const ceiling = max || 1;
-  const coordinates = points.map((point, index) => ({
-    x: left + (index / (points.length - 1)) * plotWidth,
-    y: top + plotHeight - (point.value / ceiling) * plotHeight,
-    ...point,
-  }));
-  const line = coordinates
-    .map((point, index) => `${index ? "L" : "M"} ${point.x} ${point.y}`)
-    .join(" ");
-  const area = `${line} L ${coordinates.at(-1)?.x ?? left} ${top + plotHeight} L ${left} ${top + plotHeight} Z`;
+  const [measure, setMeasure] = useState<Measure>("amount");
+  const reduceMotion = usePrefersReducedMotion();
+  const titleId = useId();
+  const descriptionId = useId();
+  const hasActivity = activity.some((point) => point.amount > 0 || point.payments > 0);
+  const measureLabel = measure === "amount" ? "USDC spend" : "Payment count";
 
   return (
-    <section className="dashboard-card dashboard-enter rounded-lg p-4">
+    <MotionCard className="dashboard-card rounded-lg p-4" delay={0.08}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold">Spend activity</h2>
-          <p className="mt-1 text-xs text-muted">
-            Observed USDC payments across the selected reporting window
+          <h2 className="text-base font-bold" id={titleId}>
+            Spend activity
+          </h2>
+          <p className="mt-1 text-xs text-muted" id={descriptionId}>
+            {measureLabel} · {from} to {to} · {activity.length} reporting intervals
           </p>
         </div>
-        <p className="text-xs font-semibold text-muted">
-          {payments.length} persisted or demo events
-        </p>
+        <div
+          className="inline-flex rounded-lg border border-line bg-subtle p-1"
+          role="group"
+          aria-label="Chart measure"
+        >
+          {(["amount", "payments"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={measure === option}
+              onClick={() => setMeasure(option)}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-semibold",
+                measure === option
+                  ? "bg-white text-foreground shadow-sm"
+                  : "text-muted hover:text-foreground",
+              )}
+            >
+              {option === "amount" ? "Spend" : "Payments"}
+            </button>
+          ))}
+        </div>
       </div>
-      {payments.length === 0 ? (
-        <div className="mt-4 flex min-h-44 items-center justify-center rounded-lg border border-dashed border-line bg-subtle text-sm text-muted">
+
+      {!hasActivity ? (
+        <div className="mt-4 flex min-h-64 items-center justify-center rounded-lg border border-dashed border-line bg-subtle text-sm text-muted">
           No payment activity in this reporting window.
         </div>
       ) : (
         <div
-          className="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue"
-          tabIndex={0}
-          aria-label="Scrollable spend activity chart"
+          className="mt-4 h-64 min-w-0"
+          role="img"
+          aria-labelledby={`${titleId} ${descriptionId}`}
+          aria-label="USDC spend activity"
         >
-          <svg
-            className="h-auto min-w-[620px] w-full"
-            viewBox={`0 0 ${width} ${height}`}
-            role="img"
-            aria-labelledby="spend-chart-title spend-chart-description"
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
+            minWidth={0}
+            minHeight={256}
+            initialDimension={{ width: 720, height: 256 }}
           >
-            <title id="spend-chart-title">USDC spend activity</title>
-            <desc id="spend-chart-description">
-              Seven-period line chart derived from the currently displayed payment events.
-            </desc>
-            <defs>
-              <linearGradient id="spend-area" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--blue)" stopOpacity="0.24" />
-                <stop offset="100%" stopColor="var(--blue)" stopOpacity="0.02" />
-              </linearGradient>
-            </defs>
-            {[0, 0.5, 1].map((ratio) => {
-              const y = top + plotHeight * ratio;
-              return (
-                <line
-                  key={ratio}
-                  x1={left}
-                  x2={width - right}
-                  y1={y}
-                  y2={y}
-                  stroke="var(--line)"
-                  strokeDasharray="4 5"
-                />
-              );
-            })}
-            <text x={left - 8} y={top + 4} textAnchor="end" className="fill-muted text-[10px]">
-              {formatCurrency(max)}
-            </text>
-            <text
-              x={left - 8}
-              y={top + plotHeight / 2 + 4}
-              textAnchor="end"
-              className="fill-muted text-[10px]"
+            <ComposedChart
+              data={activity}
+              margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+              accessibilityLayer
             >
-              {formatCurrency(max / 2)}
-            </text>
-            <text
-              x={left - 8}
-              y={top + plotHeight + 4}
-              textAnchor="end"
-              className="fill-muted text-[10px]"
-            >
-              $0
-            </text>
-            <path d={area} fill="url(#spend-area)" className="chart-area" />
-            <path
-              d={line}
-              fill="none"
-              stroke="var(--blue)"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              pathLength="1"
-              className="chart-line"
-            />
-            {coordinates.map((point) => (
-              <g key={`${point.label}-${point.x}`}>
-                <circle
-                  cx={point.x}
-                  cy={point.y}
-                  r="4"
-                  fill="white"
-                  stroke="var(--blue)"
-                  strokeWidth="2"
+              <CartesianGrid stroke="var(--line)" strokeDasharray="3 5" vertical={false} />
+              <XAxis
+                dataKey="label"
+                axisLine={{ stroke: "var(--line)" }}
+                tickLine={false}
+                tick={{ fill: "var(--muted)", fontSize: 11 }}
+                minTickGap={24}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "var(--muted)", fontSize: 11 }}
+                tickFormatter={measure === "amount" ? formatAxisAmount : (value) => String(value)}
+                width={48}
+                allowDecimals={measure === "amount"}
+              />
+              <Tooltip
+                cursor={{ stroke: "var(--blue)", strokeOpacity: 0.25 }}
+                contentStyle={{
+                  border: "1px solid var(--line)",
+                  borderRadius: 10,
+                  boxShadow: "0 12px 36px rgba(32, 43, 72, 0.14)",
+                  fontSize: 12,
+                }}
+                formatter={(value) => [
+                  measure === "amount"
+                    ? formatCurrency(Number(value ?? 0))
+                    : Number(value ?? 0).toLocaleString("en-US"),
+                  measureLabel,
+                ]}
+              />
+              {measure === "amount" && (
+                <Area
+                  type="monotone"
+                  dataKey="amount"
+                  fill="var(--blue)"
+                  fillOpacity={0.08}
+                  stroke="none"
+                  isAnimationActive={!reduceMotion}
+                  animationDuration={700}
                 />
-                <title>{`${point.label}: ${formatCurrency(point.value)} across ${point.payments} payments`}</title>
-              </g>
-            ))}
-            {coordinates.map((point, index) =>
-              index % 2 === 0 || index === coordinates.length - 1 ? (
-                <text
-                  key={point.x}
-                  x={point.x}
-                  y={height - 12}
-                  textAnchor="middle"
-                  className="fill-muted text-[10px]"
-                >
-                  {point.label}
-                </text>
-              ) : null,
-            )}
-          </svg>
+              )}
+              <Line
+                type="monotone"
+                dataKey={measure}
+                stroke="var(--blue)"
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: "white", stroke: "var(--blue)", strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: "white", stroke: "var(--blue)", strokeWidth: 2 }}
+                isAnimationActive={!reduceMotion}
+                animationDuration={700}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
       )}
-    </section>
+    </MotionCard>
   );
 }

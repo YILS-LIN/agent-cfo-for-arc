@@ -33,6 +33,13 @@ export type AgentMetrics = {
   riskLevel: "Low" | "Medium" | "High";
 };
 
+export type SpendActivityPoint = {
+  label: string;
+  bucketStart: string;
+  amount: number;
+  payments: number;
+};
+
 export type AgentSpendSummary = {
   analysis: {
     source: "demo" | "arc" | "workspace";
@@ -42,6 +49,7 @@ export type AgentSpendSummary = {
   };
   profile: AgentProfile;
   metrics: AgentMetrics;
+  activity: SpendActivityPoint[];
   payments: PaymentEvent[];
   providers: ProviderSummary[];
   categories: CategorySummary[];

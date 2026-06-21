@@ -9,13 +9,30 @@ test("renders data-driven dashboard and completes the public demo", async ({ pag
   await page.goto("/");
 
   await expect(page.getByRole("heading", { level: 1, name: "Agent CFO for Arc" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "USDC spend activity" })).toBeVisible();
-  await expect(page.getByText(/persisted or demo events/)).toBeVisible();
+  await expect(page.getByRole("img", { name: /Spend activity/ })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Spend flow/ })).toBeVisible();
+
+  const walletInput = page.getByRole("textbox", { name: "Agent Wallet Address" });
+  const demoWallet = await walletInput.inputValue();
+  await walletInput.fill("not-a-wallet");
+  await expect(walletInput).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Enter a valid EVM wallet address.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Analyze Wallet" })).toBeDisabled();
+  await walletInput.fill(demoWallet);
+  await expect(walletInput).toHaveAttribute("aria-invalid", "false");
+
+  const paymentMeasure = page.getByRole("button", { name: "Payments", exact: true });
+  await paymentMeasure.click();
+  await expect(paymentMeasure).toHaveAttribute("aria-pressed", "true");
+
+  await walletInput.press("Enter");
+  await expect(page.getByText(/DEMO · Recalculated/)).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "Run Demo Agent" }).click();
   await expect(
     page.getByText(/Demo agent completed\. \d+ x402-style payments generated\./),
   ).toBeVisible();
+  await expect(page.getByRole("img", { name: /Spend activity/ })).toBeVisible();
   expect(consoleErrors).toEqual([]);
 });
 
@@ -50,11 +67,8 @@ test("honors reduced motion and contains mobile overflow", async ({ page, isMobi
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  const animationDuration = await page
-    .locator(".chart-line")
-    .first()
-    .evaluate((element) => getComputedStyle(element).animationDuration);
-  expect(Number.parseFloat(animationDuration)).toBeLessThanOrEqual(0.00001);
+  await expect(page.locator('[data-motion="reduced"]').first()).toBeVisible();
+  await expect(page.locator('[data-motion="full"]')).toHaveCount(0);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );

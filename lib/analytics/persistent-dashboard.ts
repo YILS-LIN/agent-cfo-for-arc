@@ -1,4 +1,5 @@
 import { getRecentPayments } from "@/lib/analytics/classify-spend";
+import { buildSpendActivityPoints } from "@/lib/analytics/chart-series";
 import type { buildPersistentWorkspaceSummary } from "@/lib/analytics/persistent-summary";
 import { generateCfoReport } from "@/lib/reports/generate-cfo-report";
 import type { AgentSpendSummary, TaskSummary } from "@/types/agent";
@@ -163,6 +164,12 @@ export function buildPersistentDashboard(input: {
       topCategory: categories[0]?.category ?? "Unknown",
       riskLevel,
     },
+    activity: buildSpendActivityPoints(
+      payments,
+      input.summary.rangeStart,
+      input.summary.rangeEnd,
+      input.calculatedAt.getTime(),
+    ),
     payments: getRecentPayments(payments, 6),
     providers,
     categories,

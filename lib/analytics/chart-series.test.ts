@@ -38,10 +38,11 @@ describe("dashboard chart series", () => {
       "2026-06-01T00:00:00.000Z",
       "2026-06-08T00:00:00.000Z",
     );
-    expect(points).toHaveLength(7);
-    expect(points[0]).toMatchObject({ value: 2, payments: 2 });
-    expect(points[6]).toMatchObject({ value: 3, payments: 1 });
-    expect(points.slice(1, 6).every((point) => point.value === 0)).toBe(true);
+    expect(points).toHaveLength(12);
+    expect(points[0]).toMatchObject({ amount: 1.25, payments: 1 });
+    expect(points[11]).toMatchObject({ amount: 3, payments: 1 });
+    expect(points.reduce((total, point) => total + point.amount, 0)).toBe(5);
+    expect(points.reduce((total, point) => total + point.payments, 0)).toBe(3);
   });
 
   it("builds cumulative metric trends from payment facts", () => {
@@ -60,7 +61,17 @@ describe("dashboard chart series", () => {
       "invalid",
       new Date("2026-06-08T00:00:00.000Z").getTime(),
     );
-    expect(points).toHaveLength(7);
-    expect(points.every((point) => point.value === 0)).toBe(true);
+    expect(points).toHaveLength(12);
+    expect(points.every((point) => point.amount === 0)).toBe(true);
+  });
+
+  it("treats date-only range ends as inclusive", () => {
+    const points = buildSpendActivityPoints(
+      [payment("2026-06-08T23:59:00.000Z", "2")],
+      "2026-06-08",
+      "2026-06-08",
+    );
+    expect(points.reduce((total, point) => total + point.amount, 0)).toBe(2);
+    expect(points.reduce((total, point) => total + point.payments, 0)).toBe(1);
   });
 });

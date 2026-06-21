@@ -1,7 +1,6 @@
 import type { UsdcAmount } from "@/lib/domain/usdc";
+import type { SpendActivityPoint } from "@/types/agent";
 import type { PaymentEvent } from "@/types/payment";
-
-export type SpendActivityPoint = { label: string; value: number; payments: number };
 
 export function buildSpendActivityPoints(
   payments: PaymentEvent[],
@@ -10,17 +9,23 @@ export function buildSpendActivityPoints(
   now = Date.now(),
 ): SpendActivityPoint[] {
   const parsedStart = new Date(from).getTime();
-  const parsedEnd = new Date(to).getTime();
+  const rawEnd = new Date(to).getTime();
+  const parsedEnd = /^\d{4}-\d{2}-\d{2}$/.test(to) ? rawEnd + 24 * 60 * 60 * 1_000 : rawEnd;
   const validTimestamps = payments
     .map((payment) => new Date(payment.timestamp).getTime())
     .filter(Number.isFinite);
   const fallbackEnd = Math.max(now, ...validTimestamps);
-  const end = Number.isFinite(parsedEnd) && parsedEnd > parsedStart ? parsedEnd : fallbackEnd;
+  const end =
+    Number.isFinite(parsedEnd) && parsedEnd > parsedStart
+      ? parsedEnd
+      : Number.isFinite(parsedStart)
+        ? parsedStart + 24 * 60 * 60 * 1_000
+        : fallbackEnd;
   const start =
     Number.isFinite(parsedStart) && parsedStart < end
       ? parsedStart
       : end - 7 * 24 * 60 * 60 * 1_000;
-  const bucketCount = 7;
+  const bucketCount = 12;
   const bucketWidth = Math.max(1, (end - start) / bucketCount);
   const points = Array.from({ length: bucketCount }, (_, index) => {
     const date = new Date(start + bucketWidth * (index + 0.5));
@@ -30,7 +35,8 @@ export function buildSpendActivityPoints(
         day: "numeric",
         timeZone: "UTC",
       }).format(date),
-      value: 0,
+      bucketStart: new Date(start + bucketWidth * index).toISOString(),
+      amount: 0,
       payments: 0,
     };
   });
@@ -41,7 +47,7 @@ export function buildSpendActivityPoints(
       bucketCount - 1,
       Math.max(0, Math.floor((timestamp - start) / bucketWidth)),
     );
-    points[index].value += Number(payment.amount);
+    points[index].amount += Number(payment.amount);
     points[index].payments += 1;
   }
   return points;

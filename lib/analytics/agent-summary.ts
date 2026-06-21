@@ -1,4 +1,5 @@
 import { getBudgetUsed, getTaskSummaries } from "@/lib/analytics/budget";
+import { buildSpendActivityPoints } from "@/lib/analytics/chart-series";
 import {
   getRecentPayments,
   getTotalSpend,
@@ -21,10 +22,20 @@ type BuildSummaryOptions = {
 
 export function buildAgentSpendSummary(options: BuildSummaryOptions = {}): AgentSpendSummary {
   const payments = options.payments ?? demoPayments;
+  const paymentTimestamps = payments
+    .map((payment) => new Date(payment.timestamp))
+    .filter((timestamp) => Number.isFinite(timestamp.getTime()))
+    .sort((left, right) => left.getTime() - right.getTime());
+  const inferredDateRange = {
+    from: paymentTimestamps[0]?.toISOString().slice(0, 10) ?? demoProfile.dateRange.from,
+    to: paymentTimestamps.at(-1)?.toISOString().slice(0, 10) ?? demoProfile.dateRange.to,
+  };
   const profile = {
     ...demoProfile,
     ...options.profile,
     wallet: options.wallet?.trim() || demoProfile.wallet,
+    dateRange:
+      options.profile?.dateRange ?? (options.payments ? inferredDateRange : demoProfile.dateRange),
   };
   const totalSpend = getTotalSpend(payments);
   const providers = summarizeProviders(payments);
@@ -57,6 +68,7 @@ export function buildAgentSpendSummary(options: BuildSummaryOptions = {}): Agent
       topCategory: categories[0]?.category ?? "Unknown",
       riskLevel: getRiskLevel(risks),
     },
+    activity: buildSpendActivityPoints(payments, profile.dateRange.from, profile.dateRange.to),
     payments: getRecentPayments(payments, 6),
     providers,
     categories,

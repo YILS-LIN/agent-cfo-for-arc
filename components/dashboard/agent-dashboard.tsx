@@ -1,27 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { isAddress } from "viem";
 import {
   Bell,
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
   Clipboard,
-  Code2,
-  Database,
-  FileText,
-  Layers3,
   Loader2,
   PieChart,
   RefreshCw,
-  Server,
   Sparkles,
   WalletCards,
 } from "lucide-react";
 
 import { ProviderMark } from "@/components/dashboard/provider-mark";
 import { SpendActivityChart } from "@/components/dashboard/spend-activity-chart";
+import { SpendFlowChart } from "@/components/dashboard/spend-flow-chart";
 import { AppShell } from "@/components/dashboard/app-shell";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
@@ -29,31 +26,12 @@ import { Button } from "@/components/ui/button";
 import { ARC_TESTNET_EXPLORER, VERIFIED_EVIDENCE_WALLET } from "@/lib/arc/evidence-config";
 import { buildMetricTrends } from "@/lib/analytics/chart-series";
 import { getApiErrorMessage } from "@/lib/client/api";
-import type { UsdcAmount } from "@/lib/domain/usdc";
 import { cn, compactAddress, formatCurrency, formatPercent } from "@/lib/utils";
 import type { AgentSpendSummary, TaskSummary } from "@/types/agent";
-import type { CategorySummary, PaymentEvent, RiskSeverity } from "@/types/payment";
+import type { PaymentEvent, RiskSeverity } from "@/types/payment";
 
 type AgentDashboardProps = {
   initialSummary: AgentSpendSummary;
-};
-
-const categoryIcons = {
-  APIs: Code2,
-  Data: Database,
-  Models: Sparkles,
-  "Creator Content": FileText,
-  Compute: Server,
-  Storage: Layers3,
-};
-
-const categoryColors = {
-  APIs: "bg-blue text-blue",
-  Data: "bg-violet text-violet",
-  Models: "bg-cyan text-cyan",
-  "Creator Content": "bg-orange text-orange",
-  Compute: "bg-indigo-500 text-indigo-500",
-  Storage: "bg-slate-400 text-slate-500",
 };
 
 function WalletAnalyzer({
@@ -73,8 +51,33 @@ function WalletAnalyzer({
   readOnly?: boolean;
   actionLabel?: string;
 }) {
+  const statusId = useId();
+  const validationId = useId();
+  const [copyMessage, setCopyMessage] = useState("");
+  const validWallet = readOnly || isAddress(wallet);
+
+  async function copyWallet() {
+    if (!navigator.clipboard) {
+      setCopyMessage("Clipboard access is unavailable in this browser.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(wallet);
+      setCopyMessage("Wallet address copied.");
+    } catch {
+      setCopyMessage("Wallet address could not be copied.");
+    }
+  }
+
   return (
-    <section className="dashboard-card relative overflow-hidden rounded-lg p-4">
+    <form
+      className="dashboard-card relative overflow-hidden rounded-lg p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (validWallet) onAnalyze();
+      }}
+      noValidate
+    >
       <div className="soft-grid absolute inset-y-0 left-0 w-64 opacity-80" />
       <div className="absolute left-14 top-5 size-20 rounded-full border border-blue/10" />
       <div className="absolute left-23 top-13 size-3 rounded-full bg-violet/30" />
@@ -96,7 +99,10 @@ function WalletAnalyzer({
               <button
                 type="button"
                 className="text-[11px] font-semibold text-blue hover:underline"
-                onClick={() => onWalletChange(VERIFIED_EVIDENCE_WALLET)}
+                onClick={() => {
+                  setCopyMessage("");
+                  onWalletChange(VERIFIED_EVIDENCE_WALLET);
+                }}
               >
                 Use verified Arc sample
               </button>
@@ -107,22 +113,36 @@ function WalletAnalyzer({
               id="wallet"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
               value={wallet}
-              onChange={(event) => onWalletChange(event.target.value)}
+              onChange={(event) => {
+                setCopyMessage("");
+                onWalletChange(event.target.value);
+              }}
               readOnly={readOnly}
               spellCheck={false}
+              autoComplete="off"
+              aria-invalid={!validWallet}
+              aria-describedby={`${statusId} ${!validWallet ? validationId : ""}`.trim()}
             />
             <button
               type="button"
               className="text-muted hover:text-blue"
               aria-label="Copy wallet address"
-              onClick={() => navigator.clipboard?.writeText(wallet)}
+              onClick={() => void copyWallet()}
+              disabled={!wallet}
             >
               <Clipboard className="size-4" />
             </button>
           </div>
-          <p className="mt-1.5 truncate text-[11px] text-muted">{status}</p>
+          <p className="mt-1.5 truncate text-[11px] text-muted" id={statusId} aria-live="polite">
+            {copyMessage || status}
+          </p>
+          {!validWallet && (
+            <p className="mt-1 text-[11px] font-medium text-red" id={validationId}>
+              Enter a valid EVM wallet address.
+            </p>
+          )}
         </div>
-        <Button className="h-10 px-5" disabled={isLoading} onClick={onAnalyze}>
+        <Button className="h-10 px-5" disabled={isLoading || !validWallet} type="submit">
           {isLoading ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
@@ -131,81 +151,7 @@ function WalletAnalyzer({
           {actionLabel}
         </Button>
       </div>
-    </section>
-  );
-}
-
-function SpendFlow({
-  categories,
-  totalSpend,
-}: {
-  categories: CategorySummary[];
-  totalSpend: UsdcAmount;
-}) {
-  return (
-    <section className="dashboard-card rounded-lg p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-base font-bold">Spend Flow</h2>
-        <span className="text-xs text-muted">x402 services by category</span>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-[minmax(160px,220px)_minmax(0,1fr)] lg:items-center">
-        <div className="relative flex min-h-40 items-center justify-center">
-          <div className="absolute size-36 rounded-full bg-gradient-to-br from-cyan/20 via-white to-violet/20 blur-sm" />
-          <div className="relative flex size-28 flex-col items-center justify-center rounded-full border border-blue/15 bg-white shadow-[0_0_35px_rgba(82,91,255,0.18)]">
-            <WalletCards className="mb-1 size-6 text-muted" />
-            <span className="text-xs font-semibold">Agent Wallet</span>
-            <span className="mt-1 text-sm font-bold text-blue">{formatCurrency(totalSpend)}</span>
-          </div>
-        </div>
-        <div className="grid gap-2">
-          {categories.map((category, index) => {
-            const Icon = categoryIcons[category.category as keyof typeof categoryIcons] ?? Layers3;
-            const colors =
-              categoryColors[category.category as keyof typeof categoryColors] ??
-              "bg-slate-400 text-slate-500";
-
-            return (
-              <div
-                key={category.category}
-                className="grid grid-cols-[minmax(0,1fr)_90px_52px] items-center gap-3 text-sm sm:grid-cols-[minmax(0,1fr)_110px_58px]"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <span
-                    className={cn(
-                      "relative inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-opacity-10",
-                      colors,
-                    )}
-                  >
-                    <span
-                      className="absolute -left-28 top-1/2 hidden h-px w-24 origin-right lg:block"
-                      style={{
-                        background: `linear-gradient(90deg, transparent, currentColor)`,
-                        transform: `translateY(-50%) rotate(${index * 9 - 22}deg)`,
-                        opacity: 0.55,
-                      }}
-                    />
-                    <Icon className="size-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{category.category}</span>
-                    <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-slate-100">
-                      <span
-                        className="chart-bar block h-full origin-left rounded-full bg-current"
-                        style={{ width: `${Math.min(100, category.share)}%` }}
-                      />
-                    </span>
-                  </span>
-                </div>
-                <span className="text-right font-medium">{formatCurrency(category.amount)}</span>
-                <span className="text-right font-semibold" style={{ color: "currentColor" }}>
-                  {formatPercent(category.share)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </section>
+    </form>
   );
 }
 
@@ -456,6 +402,7 @@ function workspaceLoadingSummary(initial: AgentSpendSummary): AgentSpendSummary 
       topCategory: "Unknown",
       riskLevel: "Low",
     },
+    activity: [],
     payments: [],
     providers: [],
     categories: [],
@@ -538,24 +485,29 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
         value: formatCurrency(summary.metrics.totalSpend),
         icon: WalletCards,
         trend: trends.map((point) => point.spend),
+        href: "/spend",
       },
       {
         label: "Payments",
         value: summary.metrics.paymentCount.toLocaleString("en-US"),
         icon: RefreshCw,
         trend: trends.map((point) => point.count),
+        href: "/spend",
       },
       {
         label: "Avg Payment",
         value: formatCurrency(summary.metrics.averagePayment),
         icon: CircleDollarSign,
         trend: trends.map((point) => point.average),
+        href: "/providers",
       },
       {
         label: "Budget Used",
         value: formatPercent(summary.metrics.budgetUsed),
         icon: PieChart,
         trend: trends.map((point) => point.budgetUsed),
+        href: "/budgets",
+        visual: "gauge" as const,
       },
     ];
   }, [summary]);
@@ -667,17 +619,17 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
           />
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {metrics.map((metric) => (
-              <MetricCard key={metric.label} {...metric} />
+            {metrics.map((metric, index) => (
+              <MetricCard key={metric.label} {...metric} delay={index * 0.04} />
             ))}
           </div>
 
           <SpendActivityChart
-            payments={summary.payments}
+            activity={summary.activity}
             from={summary.profile.dateRange.from}
             to={summary.profile.dateRange.to}
           />
-          <SpendFlow categories={summary.categories} totalSpend={summary.metrics.totalSpend} />
+          <SpendFlowChart categories={summary.categories} totalSpend={summary.metrics.totalSpend} />
           <RecentPayments payments={summary.payments} wallet={summary.profile.wallet} />
         </div>
 

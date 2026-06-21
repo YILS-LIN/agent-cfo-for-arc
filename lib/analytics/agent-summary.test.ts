@@ -55,6 +55,9 @@ describe("agent spend summary reconciliation", () => {
     expect(summary.providers[0]?.amount).toBe("0.3");
     expect(summary.categories[0]?.amount).toBe("0.3");
     expect(summary.tasks[0]?.amount).toBe("0.3");
+    expect(summary.activity.reduce((total, point) => total + point.amount, 0)).toBeCloseTo(0.3);
+    expect(summary.activity.reduce((total, point) => total + point.payments, 0)).toBe(2);
+    expect(summary.profile.dateRange).toEqual({ from: "2026-06-20", to: "2026-06-20" });
   });
 
   it("labels deterministic results as non-live demo analysis", () => {
