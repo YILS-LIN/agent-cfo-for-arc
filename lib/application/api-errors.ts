@@ -36,6 +36,7 @@ import {
   UnsupportedMediaTypeError,
 } from "@/lib/application/request-security";
 import { RateLimitExceededError, RateLimitNotConfiguredError } from "@/lib/security/rate-limit";
+import { logError } from "@/lib/operations/logger";
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof InternalAuthenticationRequiredError) {
@@ -200,7 +201,7 @@ export function apiErrorResponse(error: unknown) {
   }
 
   const requestId = randomUUID();
-  console.error("Unhandled API error", { requestId, error });
+  logError("api.unhandled_error", error, { requestId });
   return NextResponse.json(
     { error: "Internal server error", code: "INTERNAL_ERROR", requestId },
     { status: 500 },

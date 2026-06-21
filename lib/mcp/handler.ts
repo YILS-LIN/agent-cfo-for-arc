@@ -14,6 +14,7 @@ import { createAgentCfoMcpServer } from "@/lib/mcp/tools";
 import { getReportService } from "@/lib/reports/server";
 import { RateLimitExceededError, RateLimitNotConfiguredError } from "@/lib/security/rate-limit";
 import { enforceWorkspaceRateLimit } from "@/lib/security/server";
+import { logError } from "@/lib/operations/logger";
 
 function allowedOrigins() {
   return new Set(
@@ -98,7 +99,7 @@ export async function handleMcpRequest(request: Request) {
       );
     }
     const requestId = crypto.randomUUID();
-    console.error("Unhandled MCP error", { requestId, error });
+    logError("mcp.unhandled_error", error, { requestId });
     return Response.json(
       {
         jsonrpc: "2.0",

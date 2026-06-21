@@ -20,6 +20,7 @@ import {
   RepositoryNotFoundError,
 } from "@/lib/db/repositories";
 import { buildLocalReport } from "@/lib/reports/local-report";
+import { logError } from "@/lib/operations/logger";
 import type { AgentSpendSummary } from "@/types/agent";
 
 const PROMPT_VERSION = "cfo-report-v1";
@@ -198,7 +199,10 @@ export class ReportService {
             errorCode,
           });
         } catch (statusError) {
-          console.error("Failed to mark rejected AI credential", { statusError });
+          logError("ai_credential.status_update_failed", statusError, {
+            workspaceId: context.workspaceId,
+            provider: "openai",
+          });
         }
       }
       throw error;
