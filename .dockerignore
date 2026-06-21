@@ -3,6 +3,7 @@
 .next
 node_modules
 coverage
+backups
 playwright-report
 test-results
 docs

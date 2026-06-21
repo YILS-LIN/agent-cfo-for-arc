@@ -28,8 +28,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "db:backup": "node scripts/backup-database.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:recovery:check": "node scripts/backup-database.mjs --help && node scripts/restore-database.mjs --help",
+    "db:restore": "node scripts/restore-database.mjs",
     "db:studio": "drizzle-kit studio",
     "start": "next start",
     "lint": "eslint .",
