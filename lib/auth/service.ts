@@ -102,25 +102,43 @@ export class AuthService {
       }
     }
 
-    for (const identity of session.identities) {
-      await this.database
-        .insert(identityAccounts)
-        .values({
-          id: randomUUID(),
-          userId,
-          provider: identity.provider,
-          providerSubject: identity.subject,
-          walletAddress: identity.address,
-          metadata: { email: identity.email, name: identity.name },
-        })
-        .onConflictDoUpdate({
-          target: [identityAccounts.provider, identityAccounts.providerSubject],
-          set: {
+    await this.database.transaction(async (transaction) => {
+      for (const identity of session.identities) {
+        await transaction
+          .insert(identityAccounts)
+          .values({
+            id: randomUUID(),
+            userId,
+            provider: identity.provider,
+            providerSubject: identity.subject,
             walletAddress: identity.address,
             metadata: { email: identity.email, name: identity.name },
-          },
-        });
-    }
+          })
+          .onConflictDoUpdate({
+            target: [identityAccounts.provider, identityAccounts.providerSubject],
+            set: {
+              walletAddress: identity.address,
+              metadata: { email: identity.email, name: identity.name },
+            },
+          });
+      }
+      const userAccounts = await transaction
+        .select()
+        .from(identityAccounts)
+        .where(eq(identityAccounts.userId, userId));
+      const staleIds = userAccounts
+        .filter(
+          (account) =>
+            (account.provider === "privy_google" || account.provider === "privy_wallet") &&
+            !keys.includes(`${account.provider}\u0000${account.providerSubject}`),
+        )
+        .map((account) => account.id);
+      if (staleIds.length > 0) {
+        await transaction
+          .delete(identityAccounts)
+          .where(and(eq(identityAccounts.userId, userId), inArray(identityAccounts.id, staleIds)));
+      }
+    });
     return userId;
   }
 

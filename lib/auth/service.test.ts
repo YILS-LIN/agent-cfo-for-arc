@@ -134,4 +134,37 @@ describe("AuthService", () => {
       IdentityConflictError,
     );
   });
+
+  it("removes unlinked identities before they can be assigned to another Privy user", async () => {
+    const provider = new FakeAuthProvider(session("did:privy:original"));
+    const service = new AuthService(database, provider);
+    const original = await service.resolve(new Request("https://example.com"));
+
+    provider.session = {
+      providerUserId: "did:privy:original",
+      sessionId: "session-unlinked",
+      identities: [{ provider: "privy_user", subject: "did:privy:original" }],
+    };
+    await service.resolve(new Request("https://example.com"));
+    await expect(database.select().from(identityAccounts)).resolves.toMatchObject([
+      { provider: "privy_user", providerSubject: "did:privy:original" },
+    ]);
+
+    provider.session = {
+      providerUserId: "did:privy:new-user",
+      sessionId: "session-relinked",
+      identities: [
+        { provider: "privy_user", subject: "did:privy:new-user" },
+        {
+          provider: "privy_google",
+          subject: "did:privy:original-google",
+          email: "relinked@example.com",
+        },
+      ],
+    };
+    const relinked = await service.resolve(new Request("https://example.com"));
+
+    expect(relinked.userId).not.toBe(original.userId);
+    await expect(database.select().from(users)).resolves.toHaveLength(2);
+  });
 });
