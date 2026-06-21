@@ -15,8 +15,8 @@ type MotionCardProps = {
 export function MotionCard({ as = "section", children, delay = 0, ...props }: MotionCardProps) {
   const reduceMotion = usePrefersReducedMotion();
   const motionProps = {
-    initial: reduceMotion ? false : { opacity: 0, y: 10 },
-    animate: { opacity: 1, y: 0 },
+    initial: reduceMotion ? false : { y: 10 },
+    animate: { y: 0 },
     transition: {
       duration: reduceMotion ? 0 : 0.36,
       delay,
