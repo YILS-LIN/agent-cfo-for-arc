@@ -50,8 +50,10 @@ test("navigates every public workspace page", async ({ page }) => {
   ] as const;
 
   for (const [label, path] of destinations) {
-    await page.getByRole("link", { name: label, exact: true }).first().click();
-    await expect(page).toHaveURL(new RegExp(`${path}$`));
+    await Promise.all([
+      page.waitForURL(new RegExp(`${path}$`), { timeout: 15_000 }),
+      page.getByRole("link", { name: label, exact: true }).first().click(),
+    ]);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   }
 });
