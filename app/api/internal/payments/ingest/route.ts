@@ -5,6 +5,7 @@ import { internalPaymentIngestRequestSchema } from "@/lib/application/api-valida
 import { getWorkspaceApplicationService } from "@/lib/application/server";
 import { readJsonBody } from "@/lib/application/request-security";
 import { getInternalWorkspaceContext, verifyInternalJobRequest } from "@/lib/auth/internal";
+import { enforceWorkspaceRateLimit } from "@/lib/security/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
       await readJsonBody(request, { maxBytes: 256 * 1024 }),
     );
     const context = await getInternalWorkspaceContext(input.workspaceId);
+    await enforceWorkspaceRateLimit(context, "payment.ingest.internal", { limit: 600 });
     const result = await getWorkspaceApplicationService().ingestPayment(
       context,
       input.payment,

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { arcSpendAdapter, LiveArcAdapterUnavailableError } from "@/lib/arc/client";
+import { apiErrorResponse } from "@/lib/application/api-errors";
+import { enforceClientRateLimit } from "@/lib/security/server";
 
 type RouteContext = {
   params: Promise<{
@@ -8,9 +10,10 @@ type RouteContext = {
   }>;
 };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const { wallet } = await context.params;
   try {
+    await enforceClientRateLimit(request, "wallet.public_summary", { limit: 60 });
     const summary = await arcSpendAdapter.getAgentSummary(decodeURIComponent(wallet));
 
     return NextResponse.json(summary, {
@@ -26,6 +29,6 @@ export async function GET(_request: Request, context: RouteContext) {
       );
     }
 
-    throw error;
+    return apiErrorResponse(error);
   }
 }

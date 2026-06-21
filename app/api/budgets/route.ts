@@ -5,6 +5,7 @@ import { createBudgetRequestSchema } from "@/lib/application/api-validation";
 import { getWorkspaceApplicationService } from "@/lib/application/server";
 import { getAuthService } from "@/lib/auth/server";
 import { readJsonBody } from "@/lib/application/request-security";
+import { enforceWorkspaceRateLimit } from "@/lib/security/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const context = await getAuthService().resolve(request);
+    await enforceWorkspaceRateLimit(context, "workspace.mutation");
     const budgets = await getWorkspaceApplicationService().listBudgets(context);
     return NextResponse.json({ budgets }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

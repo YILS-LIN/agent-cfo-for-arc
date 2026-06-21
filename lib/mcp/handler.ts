@@ -12,6 +12,8 @@ import {
 import { getMcpOAuthService } from "@/lib/mcp/server";
 import { createAgentCfoMcpServer } from "@/lib/mcp/tools";
 import { getReportService } from "@/lib/reports/server";
+import { RateLimitExceededError, RateLimitNotConfiguredError } from "@/lib/security/rate-limit";
+import { enforceWorkspaceRateLimit } from "@/lib/security/server";
 
 function allowedOrigins() {
   return new Set(
@@ -37,6 +39,7 @@ export async function handleMcpRequest(request: Request) {
   try {
     validateOrigin(request);
     const context = await getMcpOAuthService().resolve(request);
+    await enforceWorkspaceRateLimit(context, "mcp.request", { limit: 120 });
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -73,6 +76,22 @@ export async function handleMcpRequest(request: Request) {
         {
           jsonrpc: "2.0",
           error: { code: -32000, message: "MCP authorization is not configured" },
+          id: null,
+        },
+        { status: 503 },
+      );
+    }
+    if (error instanceof RateLimitExceededError) {
+      return Response.json(
+        { jsonrpc: "2.0", error: { code: -32029, message: error.message }, id: null },
+        { status: 429, headers: { "Retry-After": error.retryAfterSeconds.toString() } },
+      );
+    }
+    if (error instanceof RateLimitNotConfiguredError) {
+      return Response.json(
+        {
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "MCP rate limiting is not configured" },
           id: null,
         },
         { status: 503 },

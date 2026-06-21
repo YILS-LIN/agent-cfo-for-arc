@@ -8,6 +8,7 @@ import {
 } from "@/lib/application/api-validation";
 import { getAuthService } from "@/lib/auth/server";
 import { readJsonBody } from "@/lib/application/request-security";
+import { enforceWorkspaceRateLimit } from "@/lib/security/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,10 @@ export const dynamic = "force-dynamic";
 export async function PUT(request: Request) {
   try {
     const context = await getAuthService().resolve(request);
+    await enforceWorkspaceRateLimit(context, "ai_credential.mutate", {
+      limit: 10,
+      windowMs: 10 * 60_000,
+    });
     const input = storeAiCredentialRequestSchema.parse(
       await readJsonBody(request, { maxBytes: 4 * 1024 }),
     );
@@ -33,6 +38,10 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const context = await getAuthService().resolve(request);
+    await enforceWorkspaceRateLimit(context, "ai_credential.mutate", {
+      limit: 10,
+      windowMs: 10 * 60_000,
+    });
     const url = new URL(request.url);
     const input = deleteAiCredentialQuerySchema.parse(Object.fromEntries(url.searchParams));
     const result = await getAiCredentialService().delete(context, {

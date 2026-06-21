@@ -35,6 +35,7 @@ import {
   RequestBodyTooLargeError,
   UnsupportedMediaTypeError,
 } from "@/lib/application/request-security";
+import { RateLimitExceededError, RateLimitNotConfiguredError } from "@/lib/security/rate-limit";
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof InternalAuthenticationRequiredError) {
@@ -78,6 +79,18 @@ export function apiErrorResponse(error: unknown) {
   }
   if (error instanceof CrossSiteRequestError) {
     return NextResponse.json({ error: error.message, code: "CROSS_SITE_REQUEST" }, { status: 403 });
+  }
+  if (error instanceof RateLimitExceededError) {
+    return NextResponse.json(
+      { error: error.message, code: "RATE_LIMIT_EXCEEDED" },
+      { status: 429, headers: { "Retry-After": error.retryAfterSeconds.toString() } },
+    );
+  }
+  if (error instanceof RateLimitNotConfiguredError) {
+    return NextResponse.json(
+      { error: "Rate limiting is not configured", code: "RATE_LIMIT_NOT_CONFIGURED" },
+      { status: 503 },
+    );
   }
   if (error instanceof IdempotencyKeyRequiredError) {
     return NextResponse.json(

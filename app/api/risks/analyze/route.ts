@@ -5,6 +5,7 @@ import { analyzeRisksRequestSchema } from "@/lib/application/api-validation";
 import { getWorkspaceApplicationService } from "@/lib/application/server";
 import { getAuthService } from "@/lib/auth/server";
 import { readJsonBody } from "@/lib/application/request-security";
+import { enforceWorkspaceRateLimit } from "@/lib/security/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,10 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const context = await getAuthService().resolve(request);
+    await enforceWorkspaceRateLimit(context, "risk.analyze", {
+      limit: 20,
+      windowMs: 10 * 60_000,
+    });
     const input = analyzeRisksRequestSchema.parse(
       await readJsonBody(request, { allowEmpty: true }),
     );

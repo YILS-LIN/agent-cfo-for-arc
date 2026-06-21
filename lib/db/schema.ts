@@ -579,6 +579,22 @@ export const idempotencyKeys = pgTable(
   ],
 );
 
+export const rateLimitCounters = pgTable(
+  "rate_limit_counters",
+  {
+    scope: text("scope").notNull(),
+    keyHash: text("key_hash").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(1),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.scope, table.keyHash, table.windowStart] }),
+    index("rate_limit_expiry_idx").on(table.expiresAt),
+    check("rate_limit_count_positive", sql`${table.count} > 0`),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   identities: many(identityAccounts),
   memberships: many(workspaceMembers),
