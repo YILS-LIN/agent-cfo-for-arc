@@ -42,9 +42,9 @@ export type DashboardRisk = {
 type WorkspaceSummary = ReturnType<typeof buildPersistentWorkspaceSummary>;
 
 function riskCategory(rule: unknown): RiskSignal["category"] {
-  if (rule === "budget") return "budget";
+  if (rule === "budget" || rule === "budget_forecast") return "budget";
   if (rule === "repeat_resource") return "repeat";
-  if (rule === "velocity" || rule === "price_spike") return "spike";
+  if (rule === "velocity" || rule === "price_spike" || rule === "task_baseline") return "spike";
   return "provider";
 }
 

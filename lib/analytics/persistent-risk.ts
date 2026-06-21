@@ -7,6 +7,7 @@ export type RiskPayment = {
   walletId: string;
   taskId?: string | null;
   providerId?: string | null;
+  category?: string | null;
   resourceUri?: string | null;
   amount: UsdcAmount;
   occurredAt: Date;
@@ -25,9 +26,23 @@ export type RiskBudget = {
   version: number;
 };
 
+export type RiskProviderPolicy = {
+  providerKey: string;
+  decision: "allowed" | "review" | "blocked";
+  version: number;
+};
+
 export type PersistentRiskRule = {
   ruleId: string;
-  rule: "budget" | "budget_forecast" | "repeat_resource" | "velocity" | "price_spike";
+  rule:
+    | "budget"
+    | "budget_forecast"
+    | "repeat_resource"
+    | "velocity"
+    | "price_spike"
+    | "provider_policy"
+    | "concentration"
+    | "task_baseline";
   severity: "low" | "medium" | "high";
   title: string;
   description: string;
@@ -216,12 +231,144 @@ function priceSpikeRules(payments: RiskPayment[]): PersistentRiskRule[] {
   });
 }
 
-export function evaluatePersistentRisks(input: { payments: RiskPayment[]; budgets: RiskBudget[] }) {
+function providerPolicyRules(
+  payments: RiskPayment[],
+  policies: RiskProviderPolicy[],
+): PersistentRiskRule[] {
+  const policyByProvider = new Map(policies.map((policy) => [policy.providerKey, policy]));
+  const byProvider = new Map<string, RiskPayment[]>();
+  for (const payment of payments) {
+    if (!payment.providerId) continue;
+    byProvider.set(payment.providerId, [...(byProvider.get(payment.providerId) ?? []), payment]);
+  }
+  return [...byProvider.entries()].flatMap(([providerId, matching]): PersistentRiskRule[] => {
+    const policy = policyByProvider.get(providerId);
+    if (policy?.decision === "allowed") return [];
+    const paymentIds = matching.map((payment) => payment.id).sort();
+    const facts = {
+      providerId,
+      decision: policy?.decision ?? "unreviewed",
+      policyVersion: policy?.version ?? null,
+      paymentIds,
+    };
+    return [
+      {
+        ruleId: fingerprint(`provider_policy.${providerId}`, facts),
+        rule: "provider_policy",
+        severity: policy?.decision === "blocked" ? "high" : "medium",
+        title:
+          policy?.decision === "blocked" ? "Blocked provider used" : "Unapproved provider used",
+        description: `${matching.length} payment${matching.length === 1 ? "" : "s"} used provider ${providerId}`,
+        walletId: matching[0]?.walletId,
+        evidence: facts,
+      },
+    ];
+  });
+}
+
+function concentrationRules(payments: RiskPayment[]): PersistentRiskRule[] {
+  if (payments.length < 5) return [];
+  const total = payments.reduce((sum, payment) => sum + parseUsdc(payment.amount), BigInt(0));
+  if (total === BigInt(0)) return [];
+  const dimensions: Array<{
+    name: "provider" | "category";
+    value: (payment: RiskPayment) => string | null | undefined;
+  }> = [
+    { name: "provider", value: (payment) => payment.providerId },
+    { name: "category", value: (payment) => payment.category },
+  ];
+  return dimensions.flatMap(({ name, value }): PersistentRiskRule[] => {
+    const groups = new Map<string, RiskPayment[]>();
+    for (const payment of payments) {
+      const key = value(payment);
+      if (!key) continue;
+      groups.set(key, [...(groups.get(key) ?? []), payment]);
+    }
+    if (groups.size < 2) return [];
+    const ranked = [...groups.entries()]
+      .map(([key, matching]) => ({
+        key,
+        matching,
+        spent: matching.reduce((sum, payment) => sum + parseUsdc(payment.amount), BigInt(0)),
+      }))
+      .toSorted((left, right) =>
+        left.spent > right.spent ? -1 : left.spent < right.spent ? 1 : 0,
+      );
+    const leader = ranked[0];
+    if (!leader || leader.spent * BigInt(100) < total * BigInt(70)) return [];
+    const shareBasisPoints = Number((leader.spent * BigInt(10_000)) / total);
+    const facts = {
+      dimension: name,
+      value: leader.key,
+      shareBasisPoints,
+      paymentIds: leader.matching.map((payment) => payment.id).sort(),
+      totalSpend: formatUsdcUnits(total),
+      concentratedSpend: formatUsdcUnits(leader.spent),
+    };
+    return [
+      {
+        ruleId: fingerprint(`concentration.${name}`, facts),
+        rule: "concentration",
+        severity: shareBasisPoints >= 8_500 ? "high" : "medium",
+        title: `${name === "provider" ? "Provider" : "Category"} spend concentration`,
+        description: `${(shareBasisPoints / 100).toFixed(1)}% of spend is concentrated in ${leader.key}`,
+        evidence: facts,
+      },
+    ];
+  });
+}
+
+function taskBaselineRules(payments: RiskPayment[]): PersistentRiskRule[] {
+  const byTask = new Map<string, RiskPayment[]>();
+  for (const payment of payments) {
+    if (!payment.taskId) continue;
+    byTask.set(payment.taskId, [...(byTask.get(payment.taskId) ?? []), payment]);
+  }
+  if (byTask.size < 4) return [];
+  const totals = [...byTask.entries()]
+    .map(([taskId, matching]) => ({
+      taskId,
+      matching,
+      spent: matching.reduce((sum, payment) => sum + parseUsdc(payment.amount), BigInt(0)),
+    }))
+    .toSorted((left, right) => (left.spent < right.spent ? -1 : left.spent > right.spent ? 1 : 0));
+  const median = totals[Math.floor(totals.length / 2)]?.spent ?? BigInt(0);
+  const largest = totals.at(-1);
+  if (!largest || median === BigInt(0) || largest.spent < median * BigInt(3)) return [];
+  const facts = {
+    taskId: largest.taskId,
+    taskSpend: formatUsdcUnits(largest.spent),
+    medianTaskSpend: formatUsdcUnits(median),
+    sampleSize: totals.length,
+    paymentIds: largest.matching.map((payment) => payment.id).sort(),
+  };
+  return [
+    {
+      ruleId: fingerprint("task_baseline", facts),
+      rule: "task_baseline",
+      severity: "medium",
+      title: "Task cost exceeds its peer baseline",
+      description: `${facts.taskSpend} USDC is at least 3× the median task cost`,
+      walletId: largest.matching[0]?.walletId,
+      taskId: largest.taskId,
+      evidence: facts,
+    },
+  ];
+}
+
+export function evaluatePersistentRisks(input: {
+  payments: RiskPayment[];
+  budgets: RiskBudget[];
+  providerPolicies?: RiskProviderPolicy[];
+}) {
   return [
     ...budgetRules(input.payments, input.budgets),
     ...repeatedResourceRules(input.payments),
     ...velocityRules(input.payments),
     ...priceSpikeRules(input.payments),
+    ...providerPolicyRules(input.payments, input.providerPolicies ?? []),
+    ...concentrationRules(input.payments),
+    ...taskBaselineRules(input.payments),
   ];
 }
 
@@ -230,6 +377,7 @@ export function buildRiskAnalysisInputHash(input: {
   rangeEnd: Date;
   payments: RiskPayment[];
   budgets: RiskBudget[];
+  providerPolicies?: RiskProviderPolicy[];
 }) {
   const facts = {
     rangeStart: input.rangeStart.toISOString(),
@@ -240,11 +388,19 @@ export function buildRiskAnalysisInputHash(input: {
         walletId: payment.walletId,
         taskId: payment.taskId ?? null,
         providerId: payment.providerId ?? null,
+        category: payment.category ?? null,
         resourceUri: payment.resourceUri ?? null,
         amount: payment.amount,
         occurredAt: payment.occurredAt.toISOString(),
       }))
       .toSorted((a, b) => a.id.localeCompare(b.id)),
+    providerPolicies: (input.providerPolicies ?? [])
+      .map((policy) => ({
+        providerKey: policy.providerKey,
+        decision: policy.decision,
+        version: policy.version,
+      }))
+      .toSorted((a, b) => a.providerKey.localeCompare(b.providerKey)),
     budgets: input.budgets
       .map((budget) => ({
         id: budget.id,

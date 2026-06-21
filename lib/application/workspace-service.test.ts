@@ -467,6 +467,36 @@ describe("WorkspaceApplicationService", () => {
     expect(resolved).toMatchObject({ status: "resolved", version: 3 });
   });
 
+  it("applies persisted provider policy decisions during risk analysis", async () => {
+    const wallet = await service.createWallet(owner, walletInput(), "policy-risk-wallet");
+    await service.setProviderPolicy(owner, {
+      providerKey: "blocked-provider",
+      displayName: "Blocked Provider",
+      decision: "blocked",
+      expectedVersion: 0,
+    });
+    await service.ingestPayment(owner, {
+      walletId: wallet.wallet.id,
+      externalId: "blocked-provider-payment",
+      providerId: "blocked-provider",
+      amount: "1",
+      occurredAt: new Date("2026-06-20T12:00:00.000Z"),
+      source: "x402",
+    });
+
+    const analysis = await service.analyzeRisks(owner, {
+      rangeStart: new Date("2026-06-20T00:00:00.000Z"),
+      rangeEnd: new Date("2026-06-21T00:00:00.000Z"),
+    });
+
+    expect(analysis.signals).toMatchObject([
+      {
+        severity: "high",
+        evidence: { rule: "provider_policy", providerId: "blocked-provider" },
+      },
+    ]);
+  });
+
   it("marks failed idempotent mutations without creating an audit record", async () => {
     await expect(
       service.createWallet(owner, walletInput("invalid-address"), "invalid-wallet"),

@@ -251,7 +251,7 @@ export class WorkspaceApplicationService {
       throw new AnalysisLimitExceededError("Summary range cannot exceed 366 days");
     }
     const wallet = await this.getWallet(context, input.walletId);
-    const [payments, allBudgets, allTasks] = await Promise.all([
+    const [payments, allBudgets, allTasks, providerPolicies] = await Promise.all([
       this.payments.listForAnalysis(context, {
         from: input.rangeStart,
         to: input.rangeEnd,
@@ -259,6 +259,7 @@ export class WorkspaceApplicationService {
       }),
       this.budgets.list(context),
       this.tasks.list(context),
+      this.providerPolicies.list(context),
     ]);
     if (payments.length > 10_000) {
       throw new AnalysisLimitExceededError(
@@ -274,7 +275,7 @@ export class WorkspaceApplicationService {
     const tasks = allTasks.filter(
       (task) => task.walletId === wallet.id || paymentTaskIds.has(task.id),
     );
-    const riskRules = evaluatePersistentRisks({ payments, budgets });
+    const riskRules = evaluatePersistentRisks({ payments, budgets, providerPolicies });
     return {
       wallet,
       risks: riskRules,
@@ -337,16 +338,17 @@ export class WorkspaceApplicationService {
     if (input.rangeEnd.getTime() - input.rangeStart.getTime() > 366 * 24 * 60 * 60 * 1_000) {
       throw new AnalysisLimitExceededError("Risk analysis range cannot exceed 366 days");
     }
-    const [payments, budgets] = await Promise.all([
+    const [payments, budgets, providerPolicies] = await Promise.all([
       this.payments.listForAnalysis(context, { from: input.rangeStart, to: input.rangeEnd }),
       this.budgets.list(context),
+      this.providerPolicies.list(context),
     ]);
     if (payments.length > 10_000) {
       throw new AnalysisLimitExceededError(
         "Risk analysis exceeds 10,000 payments; use a shorter date range",
       );
     }
-    const riskInput = { payments, budgets };
+    const riskInput = { payments, budgets, providerPolicies };
     const rules = evaluatePersistentRisks(riskInput);
     const inputHash = buildRiskAnalysisInputHash({ ...input, ...riskInput });
     const result = {
@@ -362,7 +364,7 @@ export class WorkspaceApplicationService {
       const audits = new AuditRepository(transaction);
       const analysis = await analyses.createOrGet(context, {
         ...input,
-        version: "risk-v1",
+        version: "risk-v2",
         inputHash,
         result,
       });
