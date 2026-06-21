@@ -6,6 +6,7 @@ import {
   RateLimitExceededError,
   RateLimitNotConfiguredError,
   RateLimitService,
+  shouldEnforcePublicRateLimit,
 } from "@/lib/security/rate-limit";
 
 type TestDatabase = Awaited<ReturnType<typeof createTestDatabase>>;
@@ -24,6 +25,18 @@ describe("PostgreSQL rate limiter", () => {
 
   afterEach(async () => {
     await testDatabase?.close();
+  });
+
+  it("keeps public demos usable locally while requiring durable limits in production", () => {
+    expect(shouldEnforcePublicRateLimit({ NODE_ENV: "development" })).toBe(false);
+    expect(
+      shouldEnforcePublicRateLimit({
+        NODE_ENV: "development",
+        DATABASE_URL: "postgres://local",
+        RATE_LIMIT_HASH_KEY: "configured",
+      }),
+    ).toBe(true);
+    expect(shouldEnforcePublicRateLimit({ NODE_ENV: "production" })).toBe(true);
   });
 
   it("atomically enforces a fixed window and stores only a keyed hash", async () => {

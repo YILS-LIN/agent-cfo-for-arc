@@ -6,6 +6,7 @@ import {
   RateLimitNotConfiguredError,
   RateLimitService,
   requestClientKey,
+  shouldEnforcePublicRateLimit,
   workspaceRateLimitKey,
 } from "@/lib/security/rate-limit";
 
@@ -36,6 +37,7 @@ export function enforceClientRateLimit(
   scope: string,
   options: { limit?: number; windowMs?: number } = {},
 ) {
+  if (!shouldEnforcePublicRateLimit(process.env)) return Promise.resolve(undefined);
   return getRateLimitService().consume({
     scope,
     key: requestClientKey(request),

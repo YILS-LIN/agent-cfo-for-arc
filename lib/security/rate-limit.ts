@@ -16,6 +16,15 @@ export class RateLimitExceededError extends Error {
 
 export class RateLimitNotConfiguredError extends Error {}
 
+export function shouldEnforcePublicRateLimit(
+  environment: Partial<Record<"NODE_ENV" | "DATABASE_URL" | "RATE_LIMIT_HASH_KEY", string>>,
+) {
+  return (
+    environment.NODE_ENV === "production" ||
+    Boolean(environment.DATABASE_URL && environment.RATE_LIMIT_HASH_KEY)
+  );
+}
+
 export class RateLimitService {
   constructor(
     private readonly database: AppDatabase,
