@@ -11,11 +11,11 @@ Agent CFO turns USDC payment events into a tenant-scoped financial workspace: da
 ## What is implemented
 
 - Data-driven dashboard with spend trends, activity charts, motion, reduced-motion support, and responsive layouts.
-- Privy authentication with workspace membership and owner, editor, and viewer roles.
+- Privy authentication, Google and wallet identity linking, and owner, operator, and viewer workspace roles.
 - Tenant-scoped wallets, payments, tasks, budgets, provider policies, risks, sync cursors, reports, audit events, and idempotency records.
 - Exact decimal USDC accounting, optimistic concurrency, replay protection, sync leases, and failure recovery.
 - Incremental Arc Testnet native USDC indexing for arbitrary saved wallets, with chain-event evidence, recent-first bounded backfill, and resumable block cursors.
-- Encrypted workspace OpenAI credentials and structured BYOK report generation.
+- Encrypted workspace OpenAI credentials and structured BYOK report generation through the Vercel AI SDK.
 - Verified Chinese/English PDF export using an embedded CJK font.
 - OAuth-protected remote MCP tools for wallets, spend analysis, payments, risks, monitoring budgets, and reports.
 - Security headers, origin checks, body limits, distributed PostgreSQL rate limits, request IDs, structured logs, liveness, and readiness probes.
@@ -86,7 +86,7 @@ Available scopes:
 
 - `wallets:read` / `wallets:write` — observed wallet access and audited creation.
 - `analytics:read` — spend summaries, payments, and risk signals.
-- `budgets:read` / `budgets:write` — monitoring budget access and audited creation.
+- `budgets:read` / `budgets:write` — monitoring budget access and audited lifecycle management.
 - `reports:read` — report generation and retrieval results.
 
 Legacy `agent-cfo:*` scopes remain accepted during client migration but are not advertised by protected-resource metadata.
