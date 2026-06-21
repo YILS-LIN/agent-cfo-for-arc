@@ -16,10 +16,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await enforceWorkspaceRateLimit(context, "workspace.mutation");
     const { id } = await params;
     const input = updateTaskStatusRequestSchema.parse(await readJsonBody(request));
-    const task = await getWorkspaceApplicationService().updateTaskStatus(context, {
-      taskId: id,
-      ...input,
-    });
+    const task = await getWorkspaceApplicationService().updateTaskStatus(
+      context,
+      { taskId: id, ...input },
+      request.headers.get("Idempotency-Key") ?? "",
+    );
     return NextResponse.json({ task });
   } catch (error) {
     return apiErrorResponse(error);

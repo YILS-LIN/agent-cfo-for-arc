@@ -127,7 +127,7 @@ export function SettingsPage({ summary }: { summary: AgentSpendSummary }) {
     try {
       const response = await apiFetch("/api/ai/credentials/openai", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ secret, model, expectedVersion: credential?.version ?? 0 }),
       });
       if (!response.ok) {
@@ -150,7 +150,7 @@ export function SettingsPage({ summary }: { summary: AgentSpendSummary }) {
     try {
       const response = await apiFetch(
         `/api/ai/credentials/openai?expectedVersion=${credential.version}`,
-        { method: "DELETE" },
+        { method: "DELETE", headers: { "Idempotency-Key": crypto.randomUUID() } },
       );
       if (!response.ok) {
         setMessage(await getApiErrorMessage(response, "Unable to remove OpenAI credential"));

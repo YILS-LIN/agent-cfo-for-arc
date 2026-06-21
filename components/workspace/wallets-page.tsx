@@ -256,7 +256,7 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
     try {
       const response = await apiFetch(`/api/wallets/${encodeURIComponent(wallet.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ isPrimary: true }),
       });
       if (!response.ok) {

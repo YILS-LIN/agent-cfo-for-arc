@@ -134,10 +134,16 @@ describe("WorkspaceApplicationService", () => {
       "wallet-2",
     );
 
-    const primary = await service.setPrimaryWallet(owner, second.wallet.id);
+    const primary = await service.setPrimaryWallet(owner, second.wallet.id, "primary-wallet-1");
+    const primaryReplay = await service.setPrimaryWallet(
+      owner,
+      second.wallet.id,
+      "primary-wallet-1",
+    );
     const records = await service.listWallets(owner);
 
     expect(primary.isPrimary).toBe(true);
+    expect(primaryReplay.id).toBe(primary.id);
     expect(records.find((wallet) => wallet.id === first.wallet.id)?.isPrimary).toBe(false);
     expect(records.filter((wallet) => wallet.isPrimary)).toHaveLength(1);
     await expect(database.select().from(auditEvents)).resolves.toHaveLength(3);
@@ -222,20 +228,27 @@ describe("WorkspaceApplicationService", () => {
       { externalKey: "task-external-1", status: "running", name: "Research suppliers" },
       "task-request-1",
     );
-    const updated = await service.updateTaskStatus(owner, {
-      taskId: first.task.id,
-      expectedVersion: 1,
-      status: "paused",
-    });
+    const updated = await service.updateTaskStatus(
+      owner,
+      { taskId: first.task.id, expectedVersion: 1, status: "paused" },
+      "task-status-1",
+    );
 
     expect(replay).toMatchObject({ replayed: true, task: { id: first.task.id } });
     expect(updated).toMatchObject({ status: "paused", version: 2 });
     await expect(
-      service.updateTaskStatus(owner, {
-        taskId: first.task.id,
-        expectedVersion: 1,
-        status: "completed",
-      }),
+      service.updateTaskStatus(
+        owner,
+        { taskId: first.task.id, expectedVersion: 1, status: "paused" },
+        "task-status-1",
+      ),
+    ).resolves.toMatchObject({ status: "paused", version: 2 });
+    await expect(
+      service.updateTaskStatus(
+        owner,
+        { taskId: first.task.id, expectedVersion: 1, status: "completed" },
+        "task-status-2",
+      ),
     ).rejects.toBeInstanceOf(OptimisticLockError);
     await expect(database.select().from(tasks)).resolves.toHaveLength(1);
     await expect(database.select().from(auditEvents)).resolves.toHaveLength(2);
@@ -392,28 +405,52 @@ describe("WorkspaceApplicationService", () => {
   });
 
   it("persists tenant-scoped provider decisions with optimistic versions", async () => {
-    const created = await service.setProviderPolicy(owner, {
-      providerKey: "provider-1",
-      displayName: "Research API",
-      decision: "allowed",
-      expectedVersion: 0,
-    });
-    const updated = await service.setProviderPolicy(owner, {
-      providerKey: "provider-1",
-      displayName: "Research API",
-      decision: "blocked",
-      expectedVersion: 1,
-    });
+    const created = await service.setProviderPolicy(
+      owner,
+      {
+        providerKey: "provider-1",
+        displayName: "Research API",
+        decision: "allowed",
+        expectedVersion: 0,
+      },
+      "provider-policy-1",
+    );
+    const updated = await service.setProviderPolicy(
+      owner,
+      {
+        providerKey: "provider-1",
+        displayName: "Research API",
+        decision: "blocked",
+        expectedVersion: 1,
+      },
+      "provider-policy-2",
+    );
 
     expect(created).toMatchObject({ decision: "allowed", version: 1 });
     expect(updated).toMatchObject({ decision: "blocked", version: 2 });
     await expect(
-      service.setProviderPolicy(owner, {
-        providerKey: "provider-1",
-        displayName: "Research API",
-        decision: "review",
-        expectedVersion: 1,
-      }),
+      service.setProviderPolicy(
+        owner,
+        {
+          providerKey: "provider-1",
+          displayName: "Research API",
+          decision: "blocked",
+          expectedVersion: 1,
+        },
+        "provider-policy-2",
+      ),
+    ).resolves.toMatchObject({ decision: "blocked", version: 2 });
+    await expect(
+      service.setProviderPolicy(
+        owner,
+        {
+          providerKey: "provider-1",
+          displayName: "Research API",
+          decision: "review",
+          expectedVersion: 1,
+        },
+        "provider-policy-3",
+      ),
     ).rejects.toBeInstanceOf(OptimisticLockError);
     await expect(service.listProviderPolicies(owner)).resolves.toMatchObject([
       { providerKey: "provider-1", workspaceId: owner.workspaceId },
@@ -457,12 +494,19 @@ describe("WorkspaceApplicationService", () => {
     await expect(database.select().from(analysisSnapshots)).resolves.toHaveLength(1);
     await expect(database.select().from(riskSignals)).resolves.toHaveLength(1);
 
-    const investigating = await service.updateRiskStatus(owner, {
-      riskId: signal!.id,
-      expectedVersion: signal!.version,
-      status: "investigating",
-    });
+    const investigating = await service.updateRiskStatus(
+      owner,
+      { riskId: signal!.id, expectedVersion: signal!.version, status: "investigating" },
+      "risk-status-1",
+    );
     expect(investigating).toMatchObject({ status: "investigating", version: 2 });
+    await expect(
+      service.updateRiskStatus(
+        owner,
+        { riskId: signal!.id, expectedVersion: signal!.version, status: "investigating" },
+        "risk-status-1",
+      ),
+    ).resolves.toMatchObject({ status: "investigating", version: 2 });
 
     await service.updateBudget(
       owner,
@@ -481,12 +525,16 @@ describe("WorkspaceApplicationService", () => {
 
   it("applies persisted provider policy decisions during risk analysis", async () => {
     const wallet = await service.createWallet(owner, walletInput(), "policy-risk-wallet");
-    await service.setProviderPolicy(owner, {
-      providerKey: "blocked-provider",
-      displayName: "Blocked Provider",
-      decision: "blocked",
-      expectedVersion: 0,
-    });
+    await service.setProviderPolicy(
+      owner,
+      {
+        providerKey: "blocked-provider",
+        displayName: "Blocked Provider",
+        decision: "blocked",
+        expectedVersion: 0,
+      },
+      "blocked-provider-policy",
+    );
     await service.ingestPayment(owner, {
       walletId: wallet.wallet.id,
       externalId: "blocked-provider-payment",

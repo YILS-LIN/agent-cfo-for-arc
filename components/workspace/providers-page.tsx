@@ -172,7 +172,7 @@ export function ProvidersPage({ summary }: { summary: AgentSpendSummary }) {
     try {
       const response = await apiFetch(`/api/providers/${encodeURIComponent(provider.id)}/policy`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({
           displayName: provider.name,
           decision,

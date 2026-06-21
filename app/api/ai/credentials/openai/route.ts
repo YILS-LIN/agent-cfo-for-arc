@@ -23,12 +23,16 @@ export async function PUT(request: Request) {
     const input = storeAiCredentialRequestSchema.parse(
       await readJsonBody(request, { maxBytes: 4 * 1024 }),
     );
-    const credential = await getAiCredentialService().store(context, {
-      provider: "openai",
-      model: input.model ?? process.env.OPENAI_DEFAULT_MODEL ?? "gpt-5.5",
-      secret: input.secret,
-      expectedVersion: input.expectedVersion,
-    });
+    const credential = await getAiCredentialService().store(
+      context,
+      {
+        provider: "openai",
+        model: input.model ?? process.env.OPENAI_DEFAULT_MODEL ?? "gpt-5.5",
+        secret: input.secret,
+        expectedVersion: input.expectedVersion,
+      },
+      request.headers.get("Idempotency-Key") ?? "",
+    );
     return NextResponse.json({ credential });
   } catch (error) {
     return apiErrorResponse(error);
@@ -44,10 +48,11 @@ export async function DELETE(request: Request) {
     });
     const url = new URL(request.url);
     const input = deleteAiCredentialQuerySchema.parse(Object.fromEntries(url.searchParams));
-    const result = await getAiCredentialService().delete(context, {
-      provider: "openai",
-      expectedVersion: input.expectedVersion,
-    });
+    const result = await getAiCredentialService().delete(
+      context,
+      { provider: "openai", expectedVersion: input.expectedVersion },
+      request.headers.get("Idempotency-Key") ?? "",
+    );
     return NextResponse.json(result);
   } catch (error) {
     return apiErrorResponse(error);

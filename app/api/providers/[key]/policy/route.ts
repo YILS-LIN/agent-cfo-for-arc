@@ -16,10 +16,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ key:
     await enforceWorkspaceRateLimit(context, "workspace.mutation");
     const { key } = await params;
     const input = setProviderPolicyRequestSchema.parse(await readJsonBody(request));
-    const policy = await getWorkspaceApplicationService().setProviderPolicy(context, {
-      providerKey: key,
-      ...input,
-    });
+    const policy = await getWorkspaceApplicationService().setProviderPolicy(
+      context,
+      { providerKey: key, ...input },
+      request.headers.get("Idempotency-Key") ?? "",
+    );
     return NextResponse.json({ policy });
   } catch (error) {
     return apiErrorResponse(error);

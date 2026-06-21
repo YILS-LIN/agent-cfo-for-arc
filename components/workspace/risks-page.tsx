@@ -160,7 +160,7 @@ export function RisksPage({ summary }: { summary: AgentSpendSummary }) {
     try {
       const response = await apiFetch(`/api/risks/${encodeURIComponent(risk.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ status, expectedVersion: risk.version }),
       });
       if (!response.ok) {

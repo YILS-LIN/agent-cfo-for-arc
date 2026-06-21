@@ -87,6 +87,54 @@ export class WorkspaceApplicationService {
     this.providerPolicies = new ProviderPolicyRepository(database);
   }
 
+  private async runIdempotentUpdate<T>(
+    context: AuthContext,
+    input: {
+      operation: string;
+      idempotencyKey: string;
+      request: Record<string, unknown>;
+      load: (entityId: string) => Promise<T | null>;
+      mutate: (database: AppDatabase, key: string) => Promise<T & { id: string }>;
+    },
+  ) {
+    const key = normalizeIdempotencyKey(input.idempotencyKey);
+    const claim = await this.idempotency.claim(context, {
+      operation: input.operation,
+      key,
+      request: input.request,
+    });
+    if (claim.state === "completed") {
+      const entityId = claim.record.response?.entityId;
+      if (typeof entityId !== "string") {
+        throw new RepositoryNotFoundError("Stored mutation response is invalid");
+      }
+      const entity = await input.load(entityId);
+      if (!entity) throw new RepositoryNotFoundError("Stored mutation entity no longer exists");
+      return entity;
+    }
+    if (claim.state !== "claimed") {
+      throw new IdempotencyRequestUnresolvedError(
+        "A request with this idempotency key is still unresolved",
+      );
+    }
+    try {
+      return await this.database.transaction(async (transaction) => {
+        const entity = await input.mutate(transaction, key);
+        await new IdempotencyRepository(transaction).complete(context, {
+          id: claim.record.id,
+          response: { entityId: entity.id },
+        });
+        return entity;
+      });
+    } catch (error) {
+      await this.idempotency.fail(context, {
+        id: claim.record.id,
+        errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+      });
+      throw error;
+    }
+  }
+
   listWallets(context: AuthContext) {
     return this.wallets.list(context);
   }
@@ -193,26 +241,34 @@ export class WorkspaceApplicationService {
       decision: "allowed" | "review" | "blocked";
       expectedVersion: number;
     },
+    idempotencyKey: string,
     source: MutationSource = "web",
   ) {
     requireWriteRole(context);
-    return this.database.transaction(async (transaction) => {
-      const policies = new ProviderPolicyRepository(transaction);
-      const audits = new AuditRepository(transaction);
-      const policy = await policies.set(context, { ...input, updatedBy: context.userId });
-      await audits.record(context, {
-        actorUserId: mutationActor(context, source),
-        action: "provider.policy_updated",
-        entityType: "provider_policy",
-        entityId: policy.id,
-        source,
-        payload: {
-          providerKey: policy.providerKey,
-          decision: policy.decision,
-          version: policy.version,
-        },
-      });
-      return policy;
+    return this.runIdempotentUpdate(context, {
+      operation: "provider.policy.set",
+      idempotencyKey,
+      request: input,
+      load: (policyId) => this.providerPolicies.getById(context, policyId),
+      mutate: async (transaction, key) => {
+        const policies = new ProviderPolicyRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const policy = await policies.set(context, { ...input, updatedBy: context.userId });
+        await audits.record(context, {
+          actorUserId: mutationActor(context, source),
+          action: "provider.policy_updated",
+          entityType: "provider_policy",
+          entityId: policy.id,
+          source,
+          idempotencyKey: key,
+          payload: {
+            providerKey: policy.providerKey,
+            decision: policy.decision,
+            version: policy.version,
+          },
+        });
+        return policy;
+      },
     });
   }
 
@@ -389,6 +445,18 @@ export class WorkspaceApplicationService {
         inputHash,
         result,
       });
+      if (!analysis.created) {
+        const currentRuleIds = new Set(rules.map((rule) => rule.ruleId));
+        const signals = (await risks.list(context)).filter((risk) =>
+          currentRuleIds.has(risk.ruleId),
+        );
+        return {
+          snapshot: analysis.snapshot,
+          signals,
+          resolvedCount: 0,
+          replayed: true,
+        };
+      }
       const signals = await risks.upsertForSnapshot(context, {
         analysisSnapshotId: analysis.snapshot.id,
         rules,
@@ -411,7 +479,7 @@ export class WorkspaceApplicationService {
         snapshot: analysis.snapshot,
         signals,
         resolvedCount: resolved.length,
-        replayed: !analysis.created,
+        replayed: false,
       };
     });
   }
@@ -423,22 +491,30 @@ export class WorkspaceApplicationService {
       expectedVersion: number;
       status: "open" | "investigating" | "resolved";
     },
+    idempotencyKey: string,
     source: MutationSource = "web",
   ) {
     requireWriteRole(context);
-    return this.database.transaction(async (transaction) => {
-      const risks = new RiskRepository(transaction);
-      const audits = new AuditRepository(transaction);
-      const risk = await risks.updateStatus(context, input);
-      await audits.record(context, {
-        actorUserId: mutationActor(context, source),
-        action: "risk.status_updated",
-        entityType: "risk_signal",
-        entityId: risk.id,
-        source,
-        payload: { status: risk.status, version: risk.version },
-      });
-      return risk;
+    return this.runIdempotentUpdate(context, {
+      operation: "risk.status.update",
+      idempotencyKey,
+      request: input,
+      load: (riskId) => this.risks.getById(context, riskId),
+      mutate: async (transaction, key) => {
+        const risks = new RiskRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const risk = await risks.updateStatus(context, input);
+        await audits.record(context, {
+          actorUserId: mutationActor(context, source),
+          action: "risk.status_updated",
+          entityType: "risk_signal",
+          entityId: risk.id,
+          source,
+          idempotencyKey: key,
+          payload: { status: risk.status, version: risk.version },
+        });
+        return risk;
+      },
     });
   }
 
@@ -540,40 +616,60 @@ export class WorkspaceApplicationService {
   async updateTaskStatus(
     context: AuthContext,
     input: UpdateTaskStatusInput,
+    idempotencyKey: string,
     source: MutationSource = "web",
   ) {
     requireWriteRole(context);
-    return this.database.transaction(async (transaction) => {
-      const tasks = new TaskRepository(transaction);
-      const audits = new AuditRepository(transaction);
-      const task = await tasks.updateStatus(context, input);
-      await audits.record(context, {
-        actorUserId: mutationActor(context, source),
-        action: "task.status_updated",
-        entityType: "task",
-        entityId: task.id,
-        source,
-        payload: { status: task.status, version: task.version },
-      });
-      return task;
+    return this.runIdempotentUpdate(context, {
+      operation: "task.status.update",
+      idempotencyKey,
+      request: input,
+      load: (taskId) => this.tasks.getById(context, taskId),
+      mutate: async (transaction, key) => {
+        const tasks = new TaskRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const task = await tasks.updateStatus(context, input);
+        await audits.record(context, {
+          actorUserId: mutationActor(context, source),
+          action: "task.status_updated",
+          entityType: "task",
+          entityId: task.id,
+          source,
+          idempotencyKey: key,
+          payload: { status: task.status, version: task.version },
+        });
+        return task;
+      },
     });
   }
 
-  async setPrimaryWallet(context: AuthContext, walletId: string, source: MutationSource = "web") {
+  async setPrimaryWallet(
+    context: AuthContext,
+    walletId: string,
+    idempotencyKey: string,
+    source: MutationSource = "web",
+  ) {
     requireWriteRole(context);
-    return this.database.transaction(async (transaction) => {
-      const wallets = new WalletRepository(transaction);
-      const audits = new AuditRepository(transaction);
-      const wallet = await wallets.setPrimary(context, walletId);
-      await audits.record(context, {
-        actorUserId: mutationActor(context, source),
-        action: "wallet.primary_set",
-        entityType: "wallet",
-        entityId: wallet.id,
-        source,
-        payload: { address: wallet.normalizedAddress, chainId: wallet.chainId },
-      });
-      return wallet;
+    return this.runIdempotentUpdate(context, {
+      operation: "wallet.primary.set",
+      idempotencyKey,
+      request: { walletId },
+      load: (entityId) => this.wallets.getById(context, entityId),
+      mutate: async (transaction, key) => {
+        const wallets = new WalletRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const wallet = await wallets.setPrimary(context, walletId);
+        await audits.record(context, {
+          actorUserId: mutationActor(context, source),
+          action: "wallet.primary_set",
+          entityType: "wallet",
+          entityId: wallet.id,
+          source,
+          idempotencyKey: key,
+          payload: { address: wallet.normalizedAddress, chainId: wallet.chainId },
+        });
+        return wallet;
+      },
     });
   }
 

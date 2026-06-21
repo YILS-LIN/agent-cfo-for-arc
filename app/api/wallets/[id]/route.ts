@@ -16,7 +16,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await enforceWorkspaceRateLimit(context, "workspace.mutation");
     const { id } = await params;
     updateWalletRequestSchema.parse(await readJsonBody(request));
-    const wallet = await getWorkspaceApplicationService().setPrimaryWallet(context, id);
+    const wallet = await getWorkspaceApplicationService().setPrimaryWallet(
+      context,
+      id,
+      request.headers.get("Idempotency-Key") ?? "",
+    );
     return NextResponse.json({ wallet });
   } catch (error) {
     return apiErrorResponse(error);

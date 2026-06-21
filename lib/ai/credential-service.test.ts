@@ -39,12 +39,16 @@ describe("AiCredentialService", () => {
 
   it("stores only encrypted secret material and returns safe metadata", async () => {
     const secret = "sk-project-secret-value-1234";
-    const created = await service.store(owner, {
-      provider: "openai",
-      model: "gpt-5.5",
-      secret,
-      expectedVersion: 0,
-    });
+    const created = await service.store(
+      owner,
+      { provider: "openai", model: "gpt-5.5", secret, expectedVersion: 0 },
+      "credential-store-1",
+    );
+    const replay = await service.store(
+      owner,
+      { provider: "openai", model: "gpt-5.5", secret, expectedVersion: 0 },
+      "credential-store-1",
+    );
     const [record] = await database.select().from(aiProviderCredentials);
     const decrypted = await service.getDecrypted(owner, "openai");
 
@@ -56,6 +60,7 @@ describe("AiCredentialService", () => {
       version: 1,
     });
     expect(created).not.toHaveProperty("encryptedSecret");
+    expect(replay).toEqual(created);
     expect(JSON.stringify(record)).not.toContain(secret);
     expect(decrypted.secret).toBe(secret);
     expect(await service.list(owner)).toEqual([created]);
@@ -63,25 +68,36 @@ describe("AiCredentialService", () => {
   });
 
   it("rotates and deletes credentials with optimistic versions", async () => {
-    await service.store(owner, {
-      provider: "openai",
-      model: "gpt-5.5",
-      secret: "sk-first-secret-value-1234",
-      expectedVersion: 0,
-    });
-    const updated = await service.store(owner, {
-      provider: "openai",
-      model: "gpt-5.5",
-      secret: "sk-second-secret-value-5678",
-      expectedVersion: 1,
-    });
+    await service.store(
+      owner,
+      {
+        provider: "openai",
+        model: "gpt-5.5",
+        secret: "sk-first-secret-value-1234",
+        expectedVersion: 0,
+      },
+      "credential-create",
+    );
+    const updated = await service.store(
+      owner,
+      {
+        provider: "openai",
+        model: "gpt-5.5",
+        secret: "sk-second-secret-value-5678",
+        expectedVersion: 1,
+      },
+      "credential-rotate",
+    );
 
     expect(updated).toMatchObject({ secretHint: "••••5678", version: 2 });
     await expect(
-      service.delete(owner, { provider: "openai", expectedVersion: 1 }),
+      service.delete(owner, { provider: "openai", expectedVersion: 1 }, "credential-delete-bad"),
     ).rejects.toBeInstanceOf(OptimisticLockError);
     await expect(
-      service.delete(owner, { provider: "openai", expectedVersion: 2 }),
+      service.delete(owner, { provider: "openai", expectedVersion: 2 }, "credential-delete"),
+    ).resolves.toEqual({ deleted: true });
+    await expect(
+      service.delete(owner, { provider: "openai", expectedVersion: 2 }, "credential-delete"),
     ).resolves.toEqual({ deleted: true });
     await expect(service.list(owner)).resolves.toEqual([]);
   });
@@ -96,17 +112,22 @@ describe("AiCredentialService", () => {
           secret: "sk-viewer-secret-value-1234",
           expectedVersion: 0,
         },
+        "viewer-credential",
       ),
     ).rejects.toBeInstanceOf(AiCredentialPermissionError);
   });
 
   it("never exposes credentials across workspaces", async () => {
-    await service.store(owner, {
-      provider: "openai",
-      model: "gpt-5.5",
-      secret: "sk-owner-secret-value-1234",
-      expectedVersion: 0,
-    });
+    await service.store(
+      owner,
+      {
+        provider: "openai",
+        model: "gpt-5.5",
+        secret: "sk-owner-secret-value-1234",
+        expectedVersion: 0,
+      },
+      "owner-credential",
+    );
     const other = await new WorkspaceRepository(database).createPersonalWorkspace({
       displayName: "Other AI Owner",
       email: "other-ai-owner@example.com",

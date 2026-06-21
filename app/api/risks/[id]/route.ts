@@ -16,10 +16,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await enforceWorkspaceRateLimit(context, "workspace.mutation");
     const { id } = await params;
     const input = updateRiskStatusRequestSchema.parse(await readJsonBody(request));
-    const risk = await getWorkspaceApplicationService().updateRiskStatus(context, {
-      riskId: id,
-      ...input,
-    });
+    const risk = await getWorkspaceApplicationService().updateRiskStatus(
+      context,
+      { riskId: id, ...input },
+      request.headers.get("Idempotency-Key") ?? "",
+    );
     return NextResponse.json({ risk });
   } catch (error) {
     return apiErrorResponse(error);

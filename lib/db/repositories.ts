@@ -658,6 +658,15 @@ export class RiskRepository {
       .orderBy(desc(riskSignals.detectedAt), desc(riskSignals.updatedAt));
   }
 
+  async getById(scope: WorkspaceScope, riskId: string) {
+    const [risk] = await this.database
+      .select()
+      .from(riskSignals)
+      .where(and(eq(riskSignals.workspaceId, scope.workspaceId), eq(riskSignals.id, riskId)))
+      .limit(1);
+    return risk ?? null;
+  }
+
   async upsertForSnapshot(
     scope: WorkspaceScope,
     input: { analysisSnapshotId: string; rules: PersistentRiskRule[] },
@@ -867,6 +876,31 @@ export class ProviderPolicyRepository {
       .from(providerPolicies)
       .where(eq(providerPolicies.workspaceId, scope.workspaceId))
       .orderBy(asc(providerPolicies.displayName));
+  }
+
+  async getByKey(scope: WorkspaceScope, providerKey: string) {
+    const [policy] = await this.database
+      .select()
+      .from(providerPolicies)
+      .where(
+        and(
+          eq(providerPolicies.workspaceId, scope.workspaceId),
+          eq(providerPolicies.providerKey, providerKey),
+        ),
+      )
+      .limit(1);
+    return policy ?? null;
+  }
+
+  async getById(scope: WorkspaceScope, policyId: string) {
+    const [policy] = await this.database
+      .select()
+      .from(providerPolicies)
+      .where(
+        and(eq(providerPolicies.workspaceId, scope.workspaceId), eq(providerPolicies.id, policyId)),
+      )
+      .limit(1);
+    return policy ?? null;
   }
 
   async set(scope: WorkspaceScope, rawInput: SetProviderPolicyInput) {
