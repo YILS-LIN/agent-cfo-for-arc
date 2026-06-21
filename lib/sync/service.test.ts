@@ -4,7 +4,7 @@ import { WorkspaceApplicationService } from "@/lib/application/workspace-service
 import type { AuthContext } from "@/lib/auth/types";
 import type { AppDatabase } from "@/lib/db/database";
 import { SyncLeaseUnavailableError, WorkspaceRepository } from "@/lib/db/repositories";
-import { auditEvents, paymentEvents, syncCursors } from "@/lib/db/schema";
+import { auditEvents, chainEvents, paymentEvents, syncCursors, wallets } from "@/lib/db/schema";
 import { createTestDatabase } from "@/lib/db/testing";
 import { WorkspaceSyncService } from "@/lib/sync/service";
 import {
@@ -67,9 +67,21 @@ describe("WorkspaceSyncService", () => {
             {
               walletId,
               externalId: "sync-payment-1",
+              transactionHash: `0x${"1".repeat(64)}`,
               amount: "0.01",
               occurredAt: new Date("2026-06-20T00:00:00.000Z"),
               source: "x402",
+              chainEvent: {
+                chainId: 5_042_002,
+                transactionHash: `0x${"1".repeat(64)}`,
+                eventIndex: 0,
+                blockNumber: 10n,
+                blockHash: `0x${"2".repeat(64)}`,
+                contractAddress: "0xfffffffffffffffffffffffffffffffffffffffe",
+                eventName: "Transfer",
+                payload: { from: "0x1", to: "0x2", value: "10000000000000000" },
+                occurredAt: new Date("2026-06-20T00:00:00.000Z"),
+              },
             },
           ],
         };
@@ -87,6 +99,8 @@ describe("WorkspaceSyncService", () => {
       replayed: 1,
     });
     await expect(database.select().from(paymentEvents)).resolves.toHaveLength(1);
+    await expect(database.select().from(chainEvents)).resolves.toHaveLength(1);
+    expect((await database.select().from(paymentEvents))[0]?.chainEventId).toBeTruthy();
     await expect(database.select().from(syncCursors)).resolves.toMatchObject([
       { status: "ready", leaseToken: null, cursor: "cursor-1" },
     ]);
@@ -144,9 +158,33 @@ describe("WorkspaceSyncService", () => {
     await expect(service.list(owner)).resolves.toMatchObject([
       { status: "failed", leaseToken: null, lastError: "temporary upstream failure" },
     ]);
+    await expect(database.select().from(wallets)).resolves.toMatchObject([
+      { id: walletId, syncStatus: "failed" },
+    ]);
     await expect(service.sync(owner, { walletId, source: "arc" })).resolves.toMatchObject({
       cursor: { status: "ready", cursor: "recovered", leaseToken: null, lastError: null },
     });
+    await expect(database.select().from(wallets)).resolves.toMatchObject([
+      { id: walletId, syncStatus: "ready" },
+    ]);
+  });
+
+  it("marks bounded backfills as partial until the adapter reaches its target", async () => {
+    const adapter: PaymentSyncAdapter = {
+      source: "arc",
+      async sync() {
+        return { payments: [], cursor: "backfill-checkpoint", hasMore: true };
+      },
+    };
+    const service = new WorkspaceSyncService(database, application, [adapter]);
+
+    await expect(service.sync(owner, { walletId, source: "arc" })).resolves.toMatchObject({
+      hasMore: true,
+      cursor: { status: "partial", cursor: "backfill-checkpoint" },
+    });
+    await expect(database.select().from(wallets)).resolves.toMatchObject([
+      { id: walletId, syncStatus: "partial" },
+    ]);
   });
 
   it("does not claim Circle discovery support for arbitrary wallets", async () => {

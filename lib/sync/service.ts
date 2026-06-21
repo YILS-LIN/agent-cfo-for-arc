@@ -3,6 +3,7 @@ import { WorkspaceApplicationService } from "@/lib/application/workspace-service
 import type { AppDatabase } from "@/lib/db/database";
 import {
   AuditRepository,
+  ChainEventRepository,
   RepositoryNotFoundError,
   SyncLeaseUnavailableError,
   SyncRepository,
@@ -47,28 +48,41 @@ export class WorkspaceSyncService {
       walletId: wallet.id,
       source: input.source,
     });
+    if (!lease.leaseToken) throw new SyncLeaseUnavailableError("Wallet sync lease is invalid");
+    const leaseToken = lease.leaseToken;
 
     try {
+      await this.wallets.updateSyncState(context, wallet.id, { status: "syncing" });
       const batch = await adapter.sync({ wallet, cursor: lease.cursor });
       let created = 0;
       let replayed = 0;
       for (const payment of batch.payments) {
+        const { chainEvent, ...paymentInput } = payment;
+        const chainEventId = chainEvent
+          ? (await new ChainEventRepository(this.database).ingest(chainEvent)).chainEvent.id
+          : paymentInput.chainEventId;
         const result = await this.application.ingestPayment(
           context,
-          { ...payment, walletId: wallet.id, source: input.source },
+          { ...paymentInput, chainEventId, walletId: wallet.id, source: input.source },
           "system",
         );
         if (result.created) created += 1;
         else replayed += 1;
       }
-      if (!lease.leaseToken) throw new SyncLeaseUnavailableError("Wallet sync lease is invalid");
+      const completedStatus = batch.hasMore ? "partial" : "ready";
       const cursor = await this.database.transaction(async (transaction) => {
         const cursors = new SyncRepository(transaction);
+        const wallets = new WalletRepository(transaction);
         const audits = new AuditRepository(transaction);
         const completed = await cursors.complete(context, {
           id: lease.id,
-          leaseToken: lease.leaseToken!,
+          leaseToken,
           cursor: batch.cursor,
+          status: completedStatus,
+        });
+        await wallets.updateSyncState(context, wallet.id, {
+          status: completedStatus,
+          syncedAt: new Date(),
         });
         await audits.record(context, {
           actorUserId: context.userId,
@@ -76,17 +90,26 @@ export class WorkspaceSyncService {
           entityType: "wallet",
           entityId: wallet.id,
           source: "web",
-          payload: { source: input.source, created, replayed, cursor: batch.cursor },
+          payload: {
+            source: input.source,
+            created,
+            replayed,
+            cursor: batch.cursor,
+            hasMore: Boolean(batch.hasMore),
+          },
         });
         return completed;
       });
-      return { cursor, created, replayed };
+      return { cursor, created, replayed, hasMore: Boolean(batch.hasMore) };
     } catch (error) {
-      await this.cursors.fail(context, {
-        id: lease.id,
-        leaseToken: lease.leaseToken!,
-        error: error instanceof Error ? error.message : "Unknown sync failure",
-      });
+      await Promise.allSettled([
+        this.cursors.fail(context, {
+          id: lease.id,
+          leaseToken,
+          error: error instanceof Error ? error.message : "Unknown sync failure",
+        }),
+        this.wallets.updateSyncState(context, wallet.id, { status: "failed" }),
+      ]);
       throw error;
     }
   }

@@ -75,6 +75,21 @@ export const ingestPaymentInputSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
+export const ingestChainEventInputSchema = z.object({
+  chainId: z.number().int().positive(),
+  transactionHash: z.string().regex(/^0x[0-9a-f]{64}$/i),
+  eventIndex: z.number().int().nonnegative(),
+  blockNumber: z.bigint().nonnegative(),
+  blockHash: z
+    .string()
+    .regex(/^0x[0-9a-f]{64}$/i)
+    .optional(),
+  contractAddress: z.string().regex(/^0x[0-9a-f]{40}$/i),
+  eventName: z.string().trim().min(1).max(120),
+  payload: z.record(z.string(), z.unknown()),
+  occurredAt: z.date(),
+});
+
 export const createBudgetInputSchema = z
   .object({
     walletId: z.string().uuid().optional(),
@@ -99,4 +114,5 @@ export type UpdateTaskStatusInput = z.input<typeof updateTaskStatusInputSchema>;
 export type SetProviderPolicyInput = z.input<typeof setProviderPolicyInputSchema>;
 export type StoreAiCredentialInput = z.input<typeof storeAiCredentialInputSchema>;
 export type IngestPaymentInput = z.input<typeof ingestPaymentInputSchema>;
+export type IngestChainEventInput = z.input<typeof ingestChainEventInputSchema>;
 export type CreateBudgetInput = z.input<typeof createBudgetInputSchema>;

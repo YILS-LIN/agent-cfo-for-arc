@@ -14,6 +14,7 @@ Agent CFO turns USDC payment events into a tenant-scoped financial workspace: da
 - Privy authentication with workspace membership and owner, editor, and viewer roles.
 - Tenant-scoped wallets, payments, tasks, budgets, provider policies, risks, sync cursors, reports, audit events, and idempotency records.
 - Exact decimal USDC accounting, optimistic concurrency, replay protection, sync leases, and failure recovery.
+- Incremental Arc Testnet native USDC indexing for arbitrary saved wallets, with chain-event evidence, recent-first bounded backfill, and resumable block cursors.
 - Encrypted workspace OpenAI credentials and structured BYOK report generation.
 - Verified Chinese/English PDF export using an embedded CJK font.
 - OAuth-protected remote MCP tools for summaries, risks, provider policies, and reports.
@@ -23,9 +24,9 @@ Agent CFO turns USDC payment events into a tenant-scoped financial workspace: da
 
 ## Truthful integration boundary
 
-The default public workspace uses deterministic fixtures. A separate public evidence path can verify the declared Circle Gateway/Arc Testnet sample. The application does not claim arbitrary-wallet chain discovery.
+The default public workspace uses deterministic fixtures. A separate public evidence path verifies the declared Circle Gateway/Arc Testnet sample. Authenticated workspaces can index outgoing native USDC events for arbitrary saved Arc Testnet wallets from the configured EIP-7708 start block. Sync processes the newest blocks first and reports a partial state until historical backfill reaches that boundary.
 
-Persistent ingestion is available through authenticated/internal APIs and sync adapters. A production Arc/Circle adapter, provider credentials, and deployment environment must be configured by the operator. Budgets currently monitor, analyze, and alert; they do not sign or block onchain transactions.
+Arc RPC data proves onchain value movement but does not infer private business context or discover arbitrary Circle Gateway metadata. Persistent ingestion is also available through authenticated/internal APIs and source-specific adapters. Provider credentials and the deployment environment must be configured by the operator. Budgets currently monitor, analyze, and alert; they do not sign or block onchain transactions.
 
 ## Architecture
 
@@ -66,6 +67,7 @@ Copy `.env.example` to `.env.local` and configure:
 - Privy app ID, app secret, and verification key.
 - HTTPS site and MCP URLs.
 - OAuth issuer, JWKS, audience, claims, and allowed MCP origins.
+- Arc RPC URL plus optional block-range, chunk-size, and concurrency tuning.
 
 Then apply migrations and start the app:
 

@@ -281,17 +281,23 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
       const response = await apiFetch(`/api/wallets/${encodeURIComponent(wallet.id)}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: "circle_gateway" }),
+        body: JSON.stringify({ source: "arc" }),
       });
       if (!response.ok) {
         setMessage(await getApiErrorMessage(response, "Unable to synchronize wallet"));
         await loadPersistentWallets(session.workspaceId);
         return;
       }
-      const result = (await response.json()) as { created: number; replayed: number };
+      const result = (await response.json()) as {
+        created: number;
+        replayed: number;
+        hasMore: boolean;
+      };
       await loadPersistentWallets(session.workspaceId);
       setMessage(
-        `Circle sync completed: ${result.created} new and ${result.replayed} existing events reconciled.`,
+        result.hasMore
+          ? `Arc sync checkpoint saved: ${result.created} new and ${result.replayed} existing events reconciled. More history remains; run sync again to continue the backfill.`
+          : `Arc sync completed: ${result.created} new and ${result.replayed} existing events reconciled.`,
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to synchronize wallet");

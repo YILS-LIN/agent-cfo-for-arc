@@ -10,6 +10,7 @@ import {
   analysisSnapshots,
   auditEvents,
   budgets,
+  chainEvents,
   idempotencyKeys,
   paymentEvents,
   providerPolicies,
@@ -26,6 +27,7 @@ import {
   createBudgetInputSchema,
   createTaskInputSchema,
   createWalletInputSchema,
+  ingestChainEventInputSchema,
   ingestPaymentInputSchema,
   setProviderPolicyInputSchema,
   storeAiCredentialInputSchema,
@@ -33,6 +35,7 @@ import {
   type CreateBudgetInput,
   type CreateTaskInput,
   type CreateWalletInput,
+  type IngestChainEventInput,
   type IngestPaymentInput,
   type SetProviderPolicyInput,
   type StoreAiCredentialInput,
@@ -43,6 +46,7 @@ export class RepositoryNotFoundError extends Error {}
 export class OptimisticLockError extends Error {}
 export class IdempotencyConflictError extends Error {}
 export class PaymentReplayConflictError extends Error {}
+export class ChainEventReplayConflictError extends Error {}
 
 export class WorkspaceRepository {
   constructor(private readonly database: AppDatabase) {}
@@ -160,6 +164,24 @@ export class WalletRepository {
     if (!wallet) throw new RepositoryNotFoundError("Wallet not found");
     return wallet;
   }
+
+  async updateSyncState(
+    scope: WorkspaceScope,
+    walletId: string,
+    input: { status: "syncing" | "ready" | "partial" | "failed"; syncedAt?: Date },
+  ) {
+    const [wallet] = await this.database
+      .update(wallets)
+      .set({
+        syncStatus: input.status,
+        lastSyncedAt: input.syncedAt,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(wallets.workspaceId, scope.workspaceId), eq(wallets.id, walletId)))
+      .returning();
+    if (!wallet) throw new RepositoryNotFoundError("Wallet not found");
+    return wallet;
+  }
 }
 
 export class PaymentRepository {
@@ -244,6 +266,48 @@ export class PaymentRepository {
       )
       .orderBy(asc(paymentEvents.occurredAt), asc(paymentEvents.id))
       .limit(10_001);
+  }
+}
+
+export class ChainEventRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async ingest(rawInput: IngestChainEventInput) {
+    const input = ingestChainEventInputSchema.parse(rawInput);
+    const [inserted] = await this.database
+      .insert(chainEvents)
+      .values({ id: randomUUID(), ...input })
+      .onConflictDoNothing({
+        target: [chainEvents.chainId, chainEvents.transactionHash, chainEvents.eventIndex],
+      })
+      .returning();
+    if (inserted) return { chainEvent: inserted, created: true } as const;
+
+    const [existing] = await this.database
+      .select()
+      .from(chainEvents)
+      .where(
+        and(
+          eq(chainEvents.chainId, input.chainId),
+          eq(chainEvents.transactionHash, input.transactionHash),
+          eq(chainEvents.eventIndex, input.eventIndex),
+        ),
+      )
+      .limit(1);
+    if (!existing) throw new Error("Chain event conflict occurred without an existing row");
+    const sameEvent =
+      existing.blockNumber === input.blockNumber &&
+      (existing.blockHash ?? undefined) === input.blockHash &&
+      existing.contractAddress.toLowerCase() === input.contractAddress.toLowerCase() &&
+      existing.eventName === input.eventName &&
+      existing.occurredAt.getTime() === input.occurredAt.getTime() &&
+      stableStringify(existing.payload) === stableStringify(input.payload);
+    if (!sameEvent) {
+      throw new ChainEventReplayConflictError(
+        "Chain event identity was reused with different immutable fields",
+      );
+    }
+    return { chainEvent: existing, created: false } as const;
   }
 }
 
@@ -602,14 +666,14 @@ export class SyncRepository {
 
   async complete(
     scope: WorkspaceScope,
-    input: { id: string; leaseToken: string; cursor?: string },
+    input: { id: string; leaseToken: string; cursor?: string; status?: "ready" | "partial" },
   ) {
     const now = new Date();
     const [record] = await this.database
       .update(syncCursors)
       .set({
         cursor: input.cursor,
-        status: "ready",
+        status: input.status ?? "ready",
         leaseToken: null,
         leaseExpiresAt: null,
         lastError: null,

@@ -1,4 +1,4 @@
-import type { IngestPaymentInput } from "@/lib/db/validation";
+import type { IngestChainEventInput, IngestPaymentInput } from "@/lib/db/validation";
 
 export type SyncWallet = {
   id: string;
@@ -10,7 +10,8 @@ export type SyncWallet = {
 export type PaymentSyncAdapter = {
   source: "arc" | "circle_gateway" | "x402";
   sync(input: { wallet: SyncWallet; cursor?: string | null }): Promise<{
-    payments: IngestPaymentInput[];
+    payments: Array<IngestPaymentInput & { chainEvent?: IngestChainEventInput }>;
     cursor?: string;
+    hasMore?: boolean;
   }>;
 };

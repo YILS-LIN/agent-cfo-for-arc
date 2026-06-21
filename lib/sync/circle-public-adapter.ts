@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 
 import { VERIFIED_EVIDENCE_WALLET } from "@/lib/arc/evidence-config";
 import { getPublicArcEvidencePayments } from "@/lib/arc/public-evidence";
+import { SyncSourceUnavailableError } from "@/lib/sync/errors";
 import type { PaymentSyncAdapter } from "@/lib/sync/types";
 
-export class SyncSourceUnavailableError extends Error {}
+export { SyncSourceUnavailableError } from "@/lib/sync/errors";
 
 export class PublicCircleEvidenceSyncAdapter implements PaymentSyncAdapter {
   readonly source = "circle_gateway" as const;

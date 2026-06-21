@@ -19,13 +19,14 @@ import {
   InternalAuthenticationRequiredError,
 } from "@/lib/auth/internal";
 import {
+  ChainEventReplayConflictError,
   IdempotencyConflictError,
   OptimisticLockError,
   PaymentReplayConflictError,
   RepositoryNotFoundError,
   SyncLeaseUnavailableError,
 } from "@/lib/db/repositories";
-import { SyncSourceUnavailableError } from "@/lib/sync/circle-public-adapter";
+import { SyncSourceUnavailableError } from "@/lib/sync/errors";
 import { SyncAdapterNotConfiguredError, SyncPermissionError } from "@/lib/sync/service";
 import { SecretDecryptionError, SecretVaultNotConfiguredError } from "@/lib/secrets/vault";
 import { AiProviderResponseError } from "@/lib/ai/report-generator";
@@ -157,6 +158,12 @@ export function apiErrorResponse(error: unknown) {
   if (error instanceof PaymentReplayConflictError) {
     return NextResponse.json(
       { error: error.message, code: "PAYMENT_REPLAY_CONFLICT" },
+      { status: 409 },
+    );
+  }
+  if (error instanceof ChainEventReplayConflictError) {
+    return NextResponse.json(
+      { error: error.message, code: "CHAIN_EVENT_REPLAY_CONFLICT" },
       { status: 409 },
     );
   }
