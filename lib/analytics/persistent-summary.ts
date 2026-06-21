@@ -35,6 +35,21 @@ function percentage(numerator: bigint, denominator: bigint) {
   return denominator > BigInt(0) ? Number((numerator * BigInt(1_000)) / denominator) / 10 : 0;
 }
 
+function medianUnits(payments: SummaryPayment[]) {
+  if (!payments.length) return BigInt(0);
+  const ordered = payments
+    .map((payment) => parseUsdc(payment.amount))
+    .toSorted((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  const middle = Math.floor(ordered.length / 2);
+  if (ordered.length % 2 === 1) return ordered[middle] ?? BigInt(0);
+  return ((ordered[middle - 1] ?? BigInt(0)) + (ordered[middle] ?? BigInt(0))) / BigInt(2);
+}
+
+function changePercent(current: bigint, previous: bigint) {
+  if (previous === BigInt(0)) return current === BigInt(0) ? 0 : null;
+  return Number(((current - previous) * BigInt(1_000)) / previous) / 10;
+}
+
 function matchesBudget(payment: SummaryPayment, budget: SummaryBudget) {
   return (
     payment.occurredAt >= budget.periodStart &&
@@ -49,12 +64,16 @@ export function buildPersistentWorkspaceSummary(input: {
   rangeStart: Date;
   rangeEnd: Date;
   payments: SummaryPayment[];
+  previousPayments?: SummaryPayment[];
   budgets: SummaryBudget[];
   wallets: SummaryWallet[];
   tasks: SummaryTask[];
   risks: SummaryRisk[];
 }) {
   const totalSpendUnits = sumUnits(input.payments, (payment) => payment.amount);
+  const previousPayments = input.previousPayments ?? [];
+  const previousSpendUnits = sumUnits(previousPayments, (payment) => payment.amount);
+  const duration = input.rangeEnd.getTime() - input.rangeStart.getTime();
   const activeBudgets = input.budgets.filter((budget) => budget.status === "active");
   const totalBudgetUnits = sumUnits(activeBudgets, (budget) => budget.amount);
 
@@ -185,12 +204,20 @@ export function buildPersistentWorkspaceSummary(input: {
       averagePayment: formatUsdcUnits(
         input.payments.length ? totalSpendUnits / BigInt(input.payments.length) : BigInt(0),
       ),
+      medianPayment: formatUsdcUnits(medianUnits(input.payments)),
+      previousPeriodSpend: formatUsdcUnits(previousSpendUnits),
+      previousPeriodPaymentCount: previousPayments.length,
+      spendChangePercent: changePercent(totalSpendUnits, previousSpendUnits),
       assignedBudget: formatUsdcUnits(totalBudgetUnits),
       budgetUsed: percentage(totalSpendUnits, totalBudgetUnits),
       openRisks: input.risks.filter((risk) => risk.status !== "resolved").length,
       highRisks: input.risks.filter(
         (risk) => risk.status !== "resolved" && risk.severity === "high",
       ).length,
+    },
+    comparison: {
+      rangeStart: new Date(input.rangeStart.getTime() - duration).toISOString(),
+      rangeEnd: input.rangeStart.toISOString(),
     },
     wallets,
     tasks,

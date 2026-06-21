@@ -56,6 +56,14 @@ function normalizeIdempotencyKey(value: string) {
   return key;
 }
 
+function previousRange(input: { rangeStart: Date; rangeEnd: Date }) {
+  const duration = input.rangeEnd.getTime() - input.rangeStart.getTime();
+  return {
+    from: new Date(input.rangeStart.getTime() - duration),
+    to: input.rangeStart,
+  };
+}
+
 export class WorkspaceApplicationService {
   private readonly wallets: WalletRepository;
   private readonly budgets: BudgetRepository;
@@ -225,19 +233,28 @@ export class WorkspaceApplicationService {
     if (input.rangeEnd.getTime() - input.rangeStart.getTime() > 366 * 24 * 60 * 60 * 1_000) {
       throw new AnalysisLimitExceededError("Summary range cannot exceed 366 days");
     }
-    const [payments, budgets, wallets, tasks, risks] = await Promise.all([
+    const [payments, previousPayments, budgets, wallets, tasks, risks] = await Promise.all([
       this.payments.listForAnalysis(context, { from: input.rangeStart, to: input.rangeEnd }),
+      this.payments.listForAnalysis(context, previousRange(input)),
       this.budgets.list(context),
       this.wallets.list(context),
       this.tasks.list(context),
       this.risks.list(context),
     ]);
-    if (payments.length > 10_000) {
+    if (payments.length > 10_000 || previousPayments.length > 10_000) {
       throw new AnalysisLimitExceededError(
         "Summary exceeds 10,000 payments; use a shorter date range",
       );
     }
-    return buildPersistentWorkspaceSummary({ ...input, payments, budgets, wallets, tasks, risks });
+    return buildPersistentWorkspaceSummary({
+      ...input,
+      payments,
+      previousPayments,
+      budgets,
+      wallets,
+      tasks,
+      risks,
+    });
   }
 
   async getWalletSummary(
@@ -251,17 +268,18 @@ export class WorkspaceApplicationService {
       throw new AnalysisLimitExceededError("Summary range cannot exceed 366 days");
     }
     const wallet = await this.getWallet(context, input.walletId);
-    const [payments, allBudgets, allTasks, providerPolicies] = await Promise.all([
+    const [payments, previousPayments, allBudgets, allTasks, providerPolicies] = await Promise.all([
       this.payments.listForAnalysis(context, {
         from: input.rangeStart,
         to: input.rangeEnd,
         walletId: wallet.id,
       }),
+      this.payments.listForAnalysis(context, { ...previousRange(input), walletId: wallet.id }),
       this.budgets.list(context),
       this.tasks.list(context),
       this.providerPolicies.list(context),
     ]);
-    if (payments.length > 10_000) {
+    if (payments.length > 10_000 || previousPayments.length > 10_000) {
       throw new AnalysisLimitExceededError(
         "Wallet summary exceeds 10,000 payments; use a shorter date range",
       );
@@ -283,6 +301,7 @@ export class WorkspaceApplicationService {
         rangeStart: input.rangeStart,
         rangeEnd: input.rangeEnd,
         payments,
+        previousPayments,
         budgets,
         wallets: [wallet],
         tasks,
@@ -298,14 +317,15 @@ export class WorkspaceApplicationService {
     if (input.rangeEnd.getTime() - input.rangeStart.getTime() > 366 * 24 * 60 * 60 * 1_000) {
       throw new AnalysisLimitExceededError("Dashboard range cannot exceed 366 days");
     }
-    const [payments, budgets, wallets, tasks, risks] = await Promise.all([
+    const [payments, previousPayments, budgets, wallets, tasks, risks] = await Promise.all([
       this.payments.listForAnalysis(context, { from: input.rangeStart, to: input.rangeEnd }),
+      this.payments.listForAnalysis(context, previousRange(input)),
       this.budgets.list(context),
       this.wallets.list(context),
       this.tasks.list(context),
       this.risks.list(context),
     ]);
-    if (payments.length > 10_000) {
+    if (payments.length > 10_000 || previousPayments.length > 10_000) {
       throw new AnalysisLimitExceededError(
         "Dashboard exceeds 10,000 payments; use a shorter date range",
       );
@@ -313,6 +333,7 @@ export class WorkspaceApplicationService {
     const summary = buildPersistentWorkspaceSummary({
       ...input,
       payments,
+      previousPayments,
       budgets,
       wallets,
       tasks,

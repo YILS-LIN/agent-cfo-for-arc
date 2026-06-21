@@ -31,6 +31,14 @@ describe("persistent workspace summary", () => {
           occurredAt: new Date("2026-06-20T12:01:00.000Z"),
         },
       ],
+      previousPayments: [
+        {
+          id: "previous-payment",
+          walletId: "wallet-1",
+          amount: "0.000002",
+          occurredAt: new Date("2026-06-19T12:00:00.000Z"),
+        },
+      ],
       budgets: [
         {
           id: "budget-1",
@@ -50,6 +58,10 @@ describe("persistent workspace summary", () => {
       totalSpend: "0.000003",
       paymentCount: 2,
       averagePayment: "0.000001",
+      medianPayment: "0.000001",
+      previousPeriodSpend: "0.000002",
+      previousPeriodPaymentCount: 1,
+      spendChangePercent: 50,
       assignedBudget: "0.000006",
       budgetUsed: 50,
       openRisks: 1,
@@ -70,6 +82,34 @@ describe("persistent workspace summary", () => {
     ]);
     expect(summary.providers).toMatchObject([{ name: "Data API", spent: "0.000003", share: 100 }]);
     expect(summary.categories).toMatchObject([{ category: "Data", spent: "0.000003" }]);
+  });
+
+  it("calculates an exact median and a zero-to-zero period comparison", () => {
+    const summary = buildPersistentWorkspaceSummary({
+      rangeStart: new Date("2026-06-20T00:00:00.000Z"),
+      rangeEnd: new Date("2026-06-21T00:00:00.000Z"),
+      wallets: [],
+      tasks: [],
+      payments: ["100", "1", "2"].map((amount, index) => ({
+        id: `payment-${index}`,
+        walletId: "wallet-1",
+        amount,
+        occurredAt: new Date("2026-06-20T12:00:00.000Z"),
+      })),
+      previousPayments: [],
+      budgets: [],
+      risks: [],
+    });
+
+    expect(summary.metrics).toMatchObject({
+      medianPayment: "2",
+      previousPeriodSpend: "0",
+      spendChangePercent: null,
+    });
+    expect(summary.comparison).toEqual({
+      rangeStart: "2026-06-19T00:00:00.000Z",
+      rangeEnd: "2026-06-20T00:00:00.000Z",
+    });
   });
 
   it("does not count payments outside a budget period toward that limit", () => {

@@ -479,6 +479,7 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
 
   const metrics = useMemo(() => {
     const trends = buildMetricTrends(summary.payments, summary.profile.budget);
+    const spendChange = summary.metrics.spendChangePercent;
     return [
       {
         label: "Total Spend",
@@ -486,6 +487,12 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
         icon: WalletCards,
         trend: trends.map((point) => point.spend),
         href: "/spend",
+        detail:
+          spendChange === undefined
+            ? undefined
+            : spendChange === null
+              ? "New spend vs prior period"
+              : `${spendChange > 0 ? "+" : ""}${formatPercent(spendChange)} vs prior period`,
       },
       {
         label: "Payments",
@@ -493,6 +500,10 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
         icon: RefreshCw,
         trend: trends.map((point) => point.count),
         href: "/spend",
+        detail:
+          summary.metrics.previousPeriodPaymentCount === undefined
+            ? undefined
+            : `${summary.metrics.previousPeriodPaymentCount.toLocaleString("en-US")} in prior period`,
       },
       {
         label: "Avg Payment",
@@ -500,6 +511,9 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
         icon: CircleDollarSign,
         trend: trends.map((point) => point.average),
         href: "/providers",
+        detail: summary.metrics.medianPayment
+          ? `Median ${formatCurrency(summary.metrics.medianPayment)}`
+          : undefined,
       },
       {
         label: "Budget Used",

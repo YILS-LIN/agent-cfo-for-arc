@@ -28,6 +28,10 @@ export type AgentMetrics = {
   totalSpend: UsdcAmount;
   paymentCount: number;
   averagePayment: UsdcAmount;
+  medianPayment?: UsdcAmount;
+  previousPeriodSpend?: UsdcAmount;
+  previousPeriodPaymentCount?: number;
+  spendChangePercent?: number | null;
   budgetUsed: number;
   topCategory: string;
   riskLevel: "Low" | "Medium" | "High";

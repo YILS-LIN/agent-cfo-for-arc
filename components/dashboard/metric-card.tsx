@@ -15,6 +15,7 @@ type MetricCardProps = {
   icon: LucideIcon;
   trend: number[];
   href: string;
+  detail?: string;
   delay?: number;
   visual?: "line" | "gauge";
 };
@@ -62,6 +63,7 @@ export function MetricCard({
   icon: Icon,
   trend,
   href,
+  detail,
   delay = 0,
   visual = "line",
 }: MetricCardProps) {
@@ -84,6 +86,7 @@ export function MetricCard({
             <p className="mt-1 text-xl font-semibold tabular-nums">
               <AnimatedMetricValue value={value} />
             </p>
+            {detail && <p className="mt-0.5 truncate text-[11px] text-muted">{detail}</p>}
           </div>
         </div>
         <div

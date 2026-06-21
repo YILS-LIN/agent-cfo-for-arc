@@ -311,6 +311,14 @@ describe("WorkspaceApplicationService", () => {
       occurredAt: new Date("2026-06-20T12:00:00.000Z"),
       source: "x402",
     });
+    await service.ingestPayment(owner, {
+      walletId: wallet.wallet.id,
+      taskId: task.task.id,
+      externalId: "summary-previous-payment",
+      amount: "0.000002",
+      occurredAt: new Date("2026-06-19T12:00:00.000Z"),
+      source: "x402",
+    });
 
     const summary = await service.getWorkspaceSummary(owner, {
       rangeStart: new Date("2026-06-20T00:00:00.000Z"),
@@ -322,6 +330,10 @@ describe("WorkspaceApplicationService", () => {
       paymentCount: 1,
       assignedBudget: "0.000004",
       budgetUsed: 25,
+      medianPayment: "0.000001",
+      previousPeriodSpend: "0.000002",
+      previousPeriodPaymentCount: 1,
+      spendChangePercent: -50,
     });
     expect(summary.wallets).toMatchObject([{ spent: "0.000001", budgetUsed: 25 }]);
     expect(summary.tasks).toMatchObject([{ spent: "0.000001", paymentCount: 1 }]);
