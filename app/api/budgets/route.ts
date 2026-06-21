@@ -4,6 +4,7 @@ import { apiErrorResponse } from "@/lib/application/api-errors";
 import { createBudgetRequestSchema } from "@/lib/application/api-validation";
 import { getWorkspaceApplicationService } from "@/lib/application/server";
 import { getAuthService } from "@/lib/auth/server";
+import { readJsonBody } from "@/lib/application/request-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const context = await getAuthService().resolve(request);
-    const input = createBudgetRequestSchema.parse(await request.json());
+    const input = createBudgetRequestSchema.parse(await readJsonBody(request));
     const result = await getWorkspaceApplicationService().createBudget(
       context,
       input,

@@ -4,6 +4,7 @@ import { apiErrorResponse } from "@/lib/application/api-errors";
 import { analyzeRisksRequestSchema } from "@/lib/application/api-validation";
 import { getWorkspaceApplicationService } from "@/lib/application/server";
 import { getAuthService } from "@/lib/auth/server";
+import { readJsonBody } from "@/lib/application/request-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const context = await getAuthService().resolve(request);
-    const input = analyzeRisksRequestSchema.parse(await request.json().catch(() => ({})));
+    const input = analyzeRisksRequestSchema.parse(
+      await readJsonBody(request, { allowEmpty: true }),
+    );
     const rangeEnd = input.rangeEnd ?? new Date();
     const rangeStart = input.rangeStart ?? new Date(rangeEnd.getTime() - 30 * 24 * 60 * 60 * 1_000);
     const result = await getWorkspaceApplicationService().analyzeRisks(context, {

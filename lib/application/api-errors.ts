@@ -30,6 +30,11 @@ import { SyncAdapterNotConfiguredError, SyncPermissionError } from "@/lib/sync/s
 import { SecretDecryptionError, SecretVaultNotConfiguredError } from "@/lib/secrets/vault";
 import { AiProviderResponseError } from "@/lib/ai/report-generator";
 import { ReportContentError, ReportNotReadyError } from "@/lib/reports/service";
+import {
+  CrossSiteRequestError,
+  RequestBodyTooLargeError,
+  UnsupportedMediaTypeError,
+} from "@/lib/application/request-security";
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof InternalAuthenticationRequiredError) {
@@ -58,6 +63,21 @@ export function apiErrorResponse(error: unknown) {
       { error: "Request body must be valid JSON", code: "INVALID_JSON" },
       { status: 400 },
     );
+  }
+  if (error instanceof RequestBodyTooLargeError) {
+    return NextResponse.json(
+      { error: error.message, code: "REQUEST_BODY_TOO_LARGE" },
+      { status: 413 },
+    );
+  }
+  if (error instanceof UnsupportedMediaTypeError) {
+    return NextResponse.json(
+      { error: error.message, code: "UNSUPPORTED_MEDIA_TYPE" },
+      { status: 415 },
+    );
+  }
+  if (error instanceof CrossSiteRequestError) {
+    return NextResponse.json({ error: error.message, code: "CROSS_SITE_REQUEST" }, { status: 403 });
   }
   if (error instanceof IdempotencyKeyRequiredError) {
     return NextResponse.json(

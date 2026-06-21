@@ -4,6 +4,7 @@ import { apiErrorResponse } from "@/lib/application/api-errors";
 import { generateReportRequestSchema } from "@/lib/application/api-validation";
 import { getAuthService } from "@/lib/auth/server";
 import { getReportService } from "@/lib/reports/server";
+import { readJsonBody } from "@/lib/application/request-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const context = await getAuthService().resolve(request);
-    const input = generateReportRequestSchema.parse(await request.json());
+    const input = generateReportRequestSchema.parse(await readJsonBody(request));
     const rangeEnd = input.rangeEnd ?? new Date();
     const rangeStart = input.rangeStart ?? new Date(rangeEnd.getTime() - 30 * 24 * 60 * 60 * 1_000);
     const result = await getReportService().generate(

@@ -4,6 +4,7 @@ import { apiErrorResponse } from "@/lib/application/api-errors";
 import { setProviderPolicyRequestSchema } from "@/lib/application/api-validation";
 import { getWorkspaceApplicationService } from "@/lib/application/server";
 import { getAuthService } from "@/lib/auth/server";
+import { readJsonBody } from "@/lib/application/request-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ key:
   try {
     const context = await getAuthService().resolve(request);
     const { key } = await params;
-    const input = setProviderPolicyRequestSchema.parse(await request.json());
+    const input = setProviderPolicyRequestSchema.parse(await readJsonBody(request));
     const policy = await getWorkspaceApplicationService().setProviderPolicy(context, {
       providerKey: key,
       ...input,

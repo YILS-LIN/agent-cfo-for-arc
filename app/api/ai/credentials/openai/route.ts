@@ -7,6 +7,7 @@ import {
   storeAiCredentialRequestSchema,
 } from "@/lib/application/api-validation";
 import { getAuthService } from "@/lib/auth/server";
+import { readJsonBody } from "@/lib/application/request-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,9 @@ export const dynamic = "force-dynamic";
 export async function PUT(request: Request) {
   try {
     const context = await getAuthService().resolve(request);
-    const input = storeAiCredentialRequestSchema.parse(await request.json());
+    const input = storeAiCredentialRequestSchema.parse(
+      await readJsonBody(request, { maxBytes: 4 * 1024 }),
+    );
     const credential = await getAiCredentialService().store(context, {
       provider: "openai",
       model: input.model ?? process.env.OPENAI_DEFAULT_MODEL ?? "gpt-5.5",
