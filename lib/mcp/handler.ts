@@ -33,7 +33,7 @@ function validateOrigin(request: Request) {
 }
 
 function challenge() {
-  return `Bearer resource_metadata="${mcpPublicUrl()}/.well-known/oauth-protected-resource/mcp", scope="agent-cfo:read"`;
+  return `Bearer resource_metadata="${mcpPublicUrl()}/.well-known/oauth-protected-resource/mcp", scope="wallets:read analytics:read budgets:read reports:read"`;
 }
 
 export async function handleMcpRequest(request: Request) {

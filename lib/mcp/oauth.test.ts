@@ -6,6 +6,7 @@ import { WorkspaceRepository } from "@/lib/db/repositories";
 import { identityAccounts, workspaceMembers } from "@/lib/db/schema";
 import { createTestDatabase } from "@/lib/db/testing";
 import {
+  MCP_SUPPORTED_SCOPES,
   McpAuthenticationRequiredError,
   McpAuthorizationError,
   McpOAuthService,
@@ -38,6 +39,17 @@ describe("McpOAuthService", () => {
     await testDatabase?.close();
   });
 
+  it("publishes the granular first-stage scope vocabulary", () => {
+    expect(MCP_SUPPORTED_SCOPES).toEqual([
+      "wallets:read",
+      "wallets:write",
+      "analytics:read",
+      "budgets:read",
+      "budgets:write",
+      "reports:read",
+    ]);
+  });
+
   function request(token = "valid") {
     return new Request("https://cfo.example.com/mcp", {
       headers: { Authorization: `Bearer ${token}` },
@@ -49,7 +61,7 @@ describe("McpOAuthService", () => {
       payload: {
         privy_user_id: "did:privy:alice",
         workspace_id: workspaceId,
-        scope: "agent-cfo:read agent-cfo:write",
+        scope: "wallets:read analytics:read budgets:write",
         role: "owner",
       },
     }));
@@ -69,7 +81,7 @@ describe("McpOAuthService", () => {
       payload: {
         privy_user_id: "did:privy:alice",
         workspace_id: randomUUID(),
-        scope: "agent-cfo:read",
+        scope: "analytics:read",
       },
     }));
 
@@ -88,7 +100,7 @@ describe("McpOAuthService", () => {
       role: "viewer",
     });
     const service = new McpOAuthService(testDatabase.database, async () => ({
-      payload: { privy_user_id: "did:privy:alice", scope: "agent-cfo:read" },
+      payload: { privy_user_id: "did:privy:alice", scope: "analytics:read" },
     }));
 
     await expect(service.resolve(request())).rejects.toBeInstanceOf(McpAuthorizationError);

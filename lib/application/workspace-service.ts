@@ -78,6 +78,12 @@ export class WorkspaceApplicationService {
     return this.wallets.list(context);
   }
 
+  async getWallet(context: AuthContext, walletId: string) {
+    const wallet = await this.wallets.getById(context, walletId);
+    if (!wallet) throw new RepositoryNotFoundError("Workspace wallet not found");
+    return wallet;
+  }
+
   async createWallet(
     context: AuthContext,
     input: CreateWalletInput,
@@ -221,6 +227,56 @@ export class WorkspaceApplicationService {
       );
     }
     return buildPersistentWorkspaceSummary({ ...input, payments, budgets, wallets, tasks, risks });
+  }
+
+  async getWalletSummary(
+    context: AuthContext,
+    input: { walletId: string; rangeStart: Date; rangeEnd: Date },
+  ) {
+    if (input.rangeEnd <= input.rangeStart) {
+      throw new AnalysisLimitExceededError("Summary range end must be after its start");
+    }
+    if (input.rangeEnd.getTime() - input.rangeStart.getTime() > 366 * 24 * 60 * 60 * 1_000) {
+      throw new AnalysisLimitExceededError("Summary range cannot exceed 366 days");
+    }
+    const wallet = await this.getWallet(context, input.walletId);
+    const [payments, allBudgets, allTasks] = await Promise.all([
+      this.payments.listForAnalysis(context, {
+        from: input.rangeStart,
+        to: input.rangeEnd,
+        walletId: wallet.id,
+      }),
+      this.budgets.list(context),
+      this.tasks.list(context),
+    ]);
+    if (payments.length > 10_000) {
+      throw new AnalysisLimitExceededError(
+        "Wallet summary exceeds 10,000 payments; use a shorter date range",
+      );
+    }
+    const paymentTaskIds = new Set(
+      payments.flatMap((payment) => (payment.taskId ? [payment.taskId] : [])),
+    );
+    const budgets = allBudgets.filter(
+      (budget) => !budget.walletId || budget.walletId === wallet.id,
+    );
+    const tasks = allTasks.filter(
+      (task) => task.walletId === wallet.id || paymentTaskIds.has(task.id),
+    );
+    const riskRules = evaluatePersistentRisks({ payments, budgets });
+    return {
+      wallet,
+      risks: riskRules,
+      summary: buildPersistentWorkspaceSummary({
+        rangeStart: input.rangeStart,
+        rangeEnd: input.rangeEnd,
+        payments,
+        budgets,
+        wallets: [wallet],
+        tasks,
+        risks: riskRules.map((risk) => ({ severity: risk.severity, status: "open" })),
+      }),
+    };
   }
 
   async getWorkspaceDashboard(context: AuthContext, input: { rangeStart: Date; rangeEnd: Date }) {

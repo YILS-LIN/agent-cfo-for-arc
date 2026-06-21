@@ -37,6 +37,7 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "mcp:check": "node scripts/check-mcp-client.mjs",
     "performance:check": "node scripts/check-performance.mjs",
     "format": "prettier . --write",
     "format:check": "prettier . --check",

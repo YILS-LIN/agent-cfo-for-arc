@@ -294,6 +294,47 @@ describe("WorkspaceApplicationService", () => {
       metrics: { totalSpend: "0.000001", paymentCount: 1 },
       profile: { wallet: wallet.wallet.address },
     });
+
+    const secondWallet = await service.createWallet(
+      owner,
+      walletInput("0x2222222222222222222222222222222222222222"),
+      "summary-wallet-2",
+    );
+    await service.ingestPayment(owner, {
+      walletId: secondWallet.wallet.id,
+      externalId: "summary-payment-2",
+      amount: "9",
+      occurredAt: new Date("2026-06-20T13:00:00.000Z"),
+      source: "arc",
+    });
+    const walletSummary = await service.getWalletSummary(owner, {
+      walletId: wallet.wallet.id,
+      rangeStart: new Date("2026-06-20T00:00:00.000Z"),
+      rangeEnd: new Date("2026-06-21T00:00:00.000Z"),
+    });
+    expect(walletSummary).toMatchObject({
+      wallet: { id: wallet.wallet.id },
+      summary: {
+        metrics: { totalSpend: "0.000001", paymentCount: 1 },
+        wallets: [{ id: wallet.wallet.id }],
+      },
+    });
+  });
+
+  it("records MCP as the source for idempotent wallet and budget writes", async () => {
+    const wallet = await service.createWallet(owner, walletInput(), "mcp-wallet", "mcp");
+    await service.createBudget(
+      owner,
+      { ...budgetInput(), walletId: wallet.wallet.id },
+      "mcp-budget",
+      "mcp",
+    );
+
+    const audits = await database.select().from(auditEvents);
+    expect(audits).toMatchObject([
+      { action: "wallet.created", source: "mcp", idempotencyKey: "mcp-wallet" },
+      { action: "budget.created", source: "mcp", idempotencyKey: "mcp-budget" },
+    ]);
   });
 
   it("persists tenant-scoped provider decisions with optimistic versions", async () => {

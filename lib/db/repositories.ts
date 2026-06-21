@@ -253,17 +253,20 @@ export class PaymentRepository {
     return { payment: existing, created: false } as const;
   }
 
-  async listForAnalysis(scope: WorkspaceScope, filters: { from: Date; to: Date }) {
+  async listForAnalysis(
+    scope: WorkspaceScope,
+    filters: { from: Date; to: Date; walletId?: string },
+  ) {
+    const conditions = [
+      eq(paymentEvents.workspaceId, scope.workspaceId),
+      gte(paymentEvents.occurredAt, filters.from),
+      lt(paymentEvents.occurredAt, filters.to),
+    ];
+    if (filters.walletId) conditions.push(eq(paymentEvents.walletId, filters.walletId));
     return this.database
       .select()
       .from(paymentEvents)
-      .where(
-        and(
-          eq(paymentEvents.workspaceId, scope.workspaceId),
-          gte(paymentEvents.occurredAt, filters.from),
-          lt(paymentEvents.occurredAt, filters.to),
-        ),
-      )
+      .where(and(...conditions))
       .orderBy(asc(paymentEvents.occurredAt), asc(paymentEvents.id))
       .limit(10_001);
   }
@@ -386,6 +389,15 @@ export class BudgetRepository {
       .from(budgets)
       .where(eq(budgets.workspaceId, scope.workspaceId))
       .orderBy(desc(budgets.createdAt));
+  }
+
+  async getById(scope: WorkspaceScope, budgetId: string) {
+    const [budget] = await this.database
+      .select()
+      .from(budgets)
+      .where(and(eq(budgets.workspaceId, scope.workspaceId), eq(budgets.id, budgetId)))
+      .limit(1);
+    return budget ?? null;
   }
 
   async create(scope: WorkspaceScope, rawInput: CreateBudgetInput) {

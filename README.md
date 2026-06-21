@@ -17,7 +17,7 @@ Agent CFO turns USDC payment events into a tenant-scoped financial workspace: da
 - Incremental Arc Testnet native USDC indexing for arbitrary saved wallets, with chain-event evidence, recent-first bounded backfill, and resumable block cursors.
 - Encrypted workspace OpenAI credentials and structured BYOK report generation.
 - Verified Chinese/English PDF export using an embedded CJK font.
-- OAuth-protected remote MCP tools for summaries, risks, provider policies, and reports.
+- OAuth-protected remote MCP tools for wallets, spend analysis, payments, risks, monitoring budgets, and reports.
 - Security headers, origin checks, body limits, distributed PostgreSQL rate limits, request IDs, structured logs, liveness, and readiness probes.
 - Docker standalone runtime, migration image target, CI quality gates, browser E2E, WCAG scans, dependency audit, and production latency checks.
 - Integrity-checked PostgreSQL backup and explicitly confirmed restore commands.
@@ -84,9 +84,19 @@ The streamable HTTP endpoint is `/mcp`; protected-resource metadata is published
 
 Available scopes:
 
-- `agent-cfo:read` — summaries and reports.
-- `agent-cfo:write` — risk analysis and provider policies.
-- `agent-cfo:reports` — report generation.
+- `wallets:read` / `wallets:write` — observed wallet access and audited creation.
+- `analytics:read` — spend summaries, payments, and risk signals.
+- `budgets:read` / `budgets:write` — monitoring budget access and audited creation.
+- `reports:read` — report generation and retrieval results.
+
+Legacy `agent-cfo:*` scopes remain accepted during client migration but are not advertised by protected-resource metadata.
+
+After obtaining a workspace-bound access token, verify any deployment with the same Streamable HTTP client contract used by desktop MCP clients:
+
+```bash
+MCP_URL=https://your-app.example.com/mcp \
+MCP_ACCESS_TOKEN='…' pnpm mcp:check
+```
 
 ## Validation
 

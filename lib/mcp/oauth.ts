@@ -11,6 +11,17 @@ export class McpAuthenticationRequiredError extends Error {}
 export class McpAuthorizationError extends Error {}
 export class McpOAuthNotConfiguredError extends Error {}
 
+export const MCP_SUPPORTED_SCOPES = [
+  "wallets:read",
+  "wallets:write",
+  "analytics:read",
+  "budgets:read",
+  "budgets:write",
+  "reports:read",
+] as const;
+
+const LEGACY_MCP_SCOPES = ["agent-cfo:read", "agent-cfo:write", "agent-cfo:reports"];
+
 export type McpAuthContext = AuthContext & { scopes: ReadonlySet<string> };
 
 type VerifiedToken = { payload: JWTPayload };
@@ -43,10 +54,7 @@ export class McpOAuthService {
     private readonly workspaceClaim = "workspace_id",
   ) {}
 
-  async resolve(
-    request: Request,
-    requiredScopes: string[] = ["agent-cfo:read"],
-  ): Promise<McpAuthContext> {
+  async resolve(request: Request, requiredScopes?: string[]): Promise<McpAuthContext> {
     let verified: VerifiedToken;
     try {
       verified = await this.verifyToken(bearerToken(request));
@@ -55,7 +63,11 @@ export class McpOAuthService {
       throw new McpAuthenticationRequiredError("OAuth bearer token is invalid or expired");
     }
     const scopes = tokenScopes(verified.payload);
-    if (requiredScopes.some((scope) => !scopes.has(scope))) {
+    if (
+      requiredScopes?.some((scope) => !scopes.has(scope)) ||
+      (!requiredScopes &&
+        ![...MCP_SUPPORTED_SCOPES, ...LEGACY_MCP_SCOPES].some((scope) => scopes.has(scope)))
+    ) {
       throw new McpAuthorizationError("OAuth token does not grant the required scope");
     }
     const subject = verified.payload[this.subjectClaim];
