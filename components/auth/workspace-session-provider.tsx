@@ -1,6 +1,6 @@
 "use client";
 
-import { usePrivy } from "@privy-io/react-auth";
+import { useLinkAccount, usePrivy, useUnlinkOAuth, useUnlinkWallet } from "@privy-io/react-auth";
 import {
   createContext,
   useCallback,
@@ -15,6 +15,11 @@ type SessionContext = {
   userId: string;
   workspaceId: string;
   role: "owner" | "operator" | "viewer";
+  identities: Array<{
+    type: "google" | "wallet";
+    subject: string;
+    address?: `0x${string}`;
+  }>;
 };
 
 type WorkspaceSession = {
@@ -26,6 +31,8 @@ type WorkspaceSession = {
   sessionError: string | null;
   signIn: () => void;
   signOut: () => Promise<void>;
+  linkIdentity: (type: "google" | "wallet") => void;
+  unlinkIdentity: (identity: SessionContext["identities"][number]) => Promise<void>;
   apiFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
 
@@ -41,6 +48,8 @@ export function PublicDemoSessionProvider({ children }: { children: ReactNode })
       sessionError: null,
       signIn: () => undefined,
       signOut: async () => undefined,
+      linkIdentity: () => undefined,
+      unlinkIdentity: async () => undefined,
       apiFetch: async () => {
         throw new Error("Persistent workspace access is not configured");
       },
@@ -68,28 +77,35 @@ export function AuthenticatedWorkspaceSessionProvider({ children }: { children: 
     [getAccessToken],
   );
 
+  const refreshSession = useCallback(
+    async (signal?: AbortSignal) => {
+      const response = await apiFetch("/api/auth/session", { signal });
+      if (!response.ok) throw new Error("Unable to initialize the workspace session");
+      const context = (await response.json()) as SessionContext;
+      signal?.throwIfAborted();
+      setSession(context);
+      setSessionError(null);
+    },
+    [apiFetch],
+  );
+  const { linkGoogle, linkWallet } = useLinkAccount({
+    onSuccess: () => void refreshSession(),
+  });
+  const { unlink: unlinkOAuth } = useUnlinkOAuth();
+  const { unlink: unlinkWallet } = useUnlinkWallet();
+
   useEffect(() => {
     if (!ready || !authenticated) return;
-    let cancelled = false;
-    void apiFetch("/api/auth/session")
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to initialize the workspace session");
-        const context = (await response.json()) as SessionContext;
-        if (!cancelled) {
-          setSession(context);
-          setSessionError(null);
-        }
-      })
+    const controller = new AbortController();
+    void Promise.resolve()
+      .then(() => refreshSession(controller.signal))
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setSession(null);
-          setSessionError(error instanceof Error ? error.message : "Session initialization failed");
-        }
+        if (controller.signal.aborted) return;
+        setSession(null);
+        setSessionError(error instanceof Error ? error.message : "Session initialization failed");
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [apiFetch, authenticated, ready]);
+    return () => controller.abort();
+  }, [authenticated, ready, refreshSession]);
 
   const value = useMemo<WorkspaceSession>(
     () => ({
@@ -104,9 +120,35 @@ export function AuthenticatedWorkspaceSessionProvider({ children }: { children: 
         await logout();
         setSession(null);
       },
+      linkIdentity: (type) => {
+        if (type === "google") linkGoogle();
+        else linkWallet({ walletChainType: "ethereum-only" });
+      },
+      unlinkIdentity: async (identity) => {
+        if (identity.type === "google") {
+          await unlinkOAuth({ provider: "google", subject: identity.subject });
+        } else {
+          await unlinkWallet({ address: identity.address ?? identity.subject });
+        }
+        await refreshSession();
+      },
       apiFetch,
     }),
-    [apiFetch, authenticated, login, logout, ready, session, sessionError, user],
+    [
+      apiFetch,
+      authenticated,
+      linkGoogle,
+      linkWallet,
+      login,
+      logout,
+      ready,
+      refreshSession,
+      session,
+      sessionError,
+      unlinkOAuth,
+      unlinkWallet,
+      user,
+    ],
   );
 
   return (

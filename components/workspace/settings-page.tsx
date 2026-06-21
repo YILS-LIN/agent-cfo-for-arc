@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, BrainCircuit, Database, KeyRound, Save, ShieldCheck, Trash2 } from "lucide-react";
+import {
+  Bell,
+  BrainCircuit,
+  Database,
+  KeyRound,
+  Link2,
+  Save,
+  ShieldCheck,
+  Trash2,
+  Unlink,
+  Wallet,
+} from "lucide-react";
 
 import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
 import { AppShell } from "@/components/dashboard/app-shell";
@@ -50,7 +61,8 @@ function Toggle({
 }
 
 export function SettingsPage({ summary }: { summary: AgentSpendSummary }) {
-  const { mode, authenticated, session, apiFetch } = useWorkspaceSession();
+  const { mode, authenticated, session, apiFetch, linkIdentity, unlinkIdentity } =
+    useWorkspaceSession();
   const usingPersistentWorkspace = mode === "persistent" && authenticated;
   const canWrite = !usingPersistentWorkspace || (session !== null && session.role !== "viewer");
   const [message, setMessage] = useState("Demo preferences are stored in this browser only.");
@@ -66,6 +78,19 @@ export function SettingsPage({ summary }: { summary: AgentSpendSummary }) {
   const [secret, setSecret] = useState("");
   const [model, setModel] = useState("gpt-5.5");
   const [savingCredential, setSavingCredential] = useState(false);
+  const [identityBusy, setIdentityBusy] = useState<string | null>(null);
+
+  async function removeIdentity(identity: NonNullable<typeof session>["identities"][number]) {
+    setIdentityBusy(identity.subject);
+    try {
+      await unlinkIdentity(identity);
+      setMessage("Sign-in identity unlinked and the workspace session refreshed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to unlink identity");
+    } finally {
+      setIdentityBusy(null);
+    }
+  }
 
   const loadCredential = useCallback(
     async (workspaceId: string, signal?: AbortSignal) => {
@@ -190,6 +215,51 @@ export function SettingsPage({ summary }: { summary: AgentSpendSummary }) {
 
       {usingPersistentWorkspace ? (
         <div className="grid gap-4 xl:grid-cols-2">
+          <SectionCard
+            title="Sign-in identities"
+            description="Link Google and Ethereum wallets to the same internal Agent CFO user."
+            action={<Link2 className="size-5 text-blue" />}
+          >
+            <div className="grid gap-2">
+              {session?.identities.map((identity) => (
+                <div
+                  key={`${identity.type}:${identity.subject}`}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white p-3"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold capitalize">{identity.type}</span>
+                    <span className="block truncate text-xs text-muted">
+                      {identity.address ?? identity.subject}
+                    </span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    disabled={session.identities.length <= 1 || identityBusy !== null}
+                    onClick={() => void removeIdentity(identity)}
+                    aria-label={`Unlink ${identity.type} identity`}
+                  >
+                    <Unlink className="size-4" /> Unlink
+                  </Button>
+                </div>
+              ))}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  variant="ghost"
+                  disabled={session?.identities.some((identity) => identity.type === "google")}
+                  onClick={() => linkIdentity("google")}
+                >
+                  <Link2 className="size-4" /> Link Google
+                </Button>
+                <Button variant="ghost" onClick={() => linkIdentity("wallet")}>
+                  <Wallet className="size-4" /> Link wallet
+                </Button>
+              </div>
+              <p className="text-xs text-muted">
+                At least one sign-in identity must remain linked. Monitored wallets are managed
+                separately.
+              </p>
+            </div>
+          </SectionCard>
           <SectionCard
             title="OpenAI reports"
             description="Bring your own key for structured CFO reports. The secret is encrypted at rest and never displayed again."
