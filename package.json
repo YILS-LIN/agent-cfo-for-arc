@@ -36,8 +36,10 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
+    "security:audit": "pnpm audit --prod --audit-level high --registry=https://registry.npmjs.org",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:standalone": "node scripts/verify-standalone.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/noto-sans-sc": "^0.4.2",
