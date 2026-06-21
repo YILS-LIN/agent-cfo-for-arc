@@ -1,7 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 
-import { cn } from "@/lib/utils";
-
 type MetricCardProps = {
   label: string;
   value: string;
@@ -15,7 +13,7 @@ export function MetricCard({ label, value, icon: Icon, trend }: MetricCardProps)
   const range = max - min || 1;
 
   return (
-    <article className="dashboard-card min-w-0 rounded-lg p-3">
+    <article className="dashboard-card dashboard-enter min-w-0 rounded-lg p-3">
       <div className="flex items-start gap-3">
         <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-line bg-white">
           <Icon className="size-4 text-muted" />
@@ -25,21 +23,28 @@ export function MetricCard({ label, value, icon: Icon, trend }: MetricCardProps)
           <p className="mt-1 text-xl font-semibold">{value}</p>
         </div>
       </div>
-      <div className="mt-2 flex h-4 items-end gap-1">
-        {trend.map((point, index) => (
-          <span
-            key={`${point}-${index}`}
-            className={cn(
-              "h-1 rounded-full bg-blue transition-all",
-              index === trend.length - 1 ? "w-6" : "w-5",
-            )}
-            style={{
-              transform: `translateY(-${((point - min) / range) * 8}px)`,
-              opacity: 0.45 + ((point - min) / range) * 0.45,
-            }}
-          />
-        ))}
-      </div>
+      <svg
+        className="mt-2 h-5 w-full"
+        viewBox="0 0 120 20"
+        role="img"
+        aria-label={`${label} trend derived from displayed payments`}
+      >
+        <polyline
+          points={trend
+            .map(
+              (point, index) =>
+                `${(index / Math.max(1, trend.length - 1)) * 118 + 1},${18 - ((point - min) / range) * 15}`,
+            )
+            .join(" ")}
+          fill="none"
+          stroke="var(--blue)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          pathLength="1"
+          className="chart-line"
+        />
+      </svg>
     </article>
   );
 }

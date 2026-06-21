@@ -21,11 +21,13 @@ import {
 } from "lucide-react";
 
 import { ProviderMark } from "@/components/dashboard/provider-mark";
+import { SpendActivityChart } from "@/components/dashboard/spend-activity-chart";
 import { AppShell } from "@/components/dashboard/app-shell";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
 import { Button } from "@/components/ui/button";
 import { ARC_TESTNET_EXPLORER, VERIFIED_EVIDENCE_WALLET } from "@/lib/arc/evidence-config";
+import { buildMetricTrends } from "@/lib/analytics/chart-series";
 import { getApiErrorMessage } from "@/lib/client/api";
 import type { UsdcAmount } from "@/lib/domain/usdc";
 import { cn, compactAddress, formatCurrency, formatPercent } from "@/lib/utils";
@@ -165,7 +167,7 @@ function SpendFlow({
             return (
               <div
                 key={category.category}
-                className="grid grid-cols-[minmax(0,1fr)_110px_58px] items-center gap-3 text-sm"
+                className="grid grid-cols-[minmax(0,1fr)_90px_52px] items-center gap-3 text-sm sm:grid-cols-[minmax(0,1fr)_110px_58px]"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <span
@@ -184,7 +186,15 @@ function SpendFlow({
                     />
                     <Icon className="size-4" />
                   </span>
-                  <span className="truncate font-semibold">{category.category}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{category.category}</span>
+                    <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <span
+                        className="chart-bar block h-full origin-left rounded-full bg-current"
+                        style={{ width: `${Math.min(100, category.share)}%` }}
+                      />
+                    </span>
+                  </span>
                 </div>
                 <span className="text-right font-medium">{formatCurrency(category.amount)}</span>
                 <span className="text-right font-semibold" style={{ color: "currentColor" }}>
@@ -283,9 +293,9 @@ function ProvidersPanel({ summary }: { summary: AgentSpendSummary }) {
     <section className="dashboard-card rounded-lg p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-base font-bold">Top Providers / Top Payees</h2>
-        <button className="text-xs font-semibold text-blue" type="button">
+        <Link className="text-xs font-semibold text-blue" href="/providers">
           View all
-        </button>
+        </Link>
       </div>
       <div className="grid gap-2.5">
         {summary.providers.slice(0, 5).map((provider, index) => (
@@ -324,9 +334,9 @@ function RisksPanel({ summary }: { summary: AgentSpendSummary }) {
     <section className="dashboard-card rounded-lg p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-base font-bold">Risks / Anomalies</h2>
-        <button className="text-xs font-semibold text-blue" type="button">
+        <Link className="text-xs font-semibold text-blue" href="/risks">
           View all
-        </button>
+        </Link>
       </div>
       <div className="grid gap-2">
         {summary.risks.map((risk) => (
@@ -361,10 +371,10 @@ function TaskPanel({ task }: { task?: TaskSummary }) {
 
   return (
     <section className="dashboard-card rounded-lg p-4">
-      <div className="mb-4 flex items-center justify-between">
+      <Link className="mb-4 flex items-center justify-between" href="/tasks">
         <h2 className="text-base font-bold">Task-Level Spend Summary</h2>
         <ChevronRight className="size-5 text-blue" />
-      </div>
+      </Link>
       <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
         <p className="text-sm font-bold">{task.name}</p>
         <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-muted">
@@ -391,12 +401,12 @@ function TaskPanel({ task }: { task?: TaskSummary }) {
   );
 }
 
-function AiInsight({ summary }: { summary: AgentSpendSummary }) {
+function CfoInsight({ summary }: { summary: AgentSpendSummary }) {
   return (
     <section className="dashboard-card overflow-hidden rounded-lg border-blue/20 bg-blue-soft/50 p-4">
       <div className="flex items-center gap-2 text-sm font-bold text-blue">
         <Sparkles className="size-4" />
-        AI Insight
+        CFO Insight
       </div>
       <div className="mt-4 grid grid-cols-[minmax(0,1fr)_64px] items-center gap-4">
         <p className="text-sm font-semibold leading-6">
@@ -408,6 +418,12 @@ function AiInsight({ summary }: { summary: AgentSpendSummary }) {
           <Sparkles className="size-8 text-violet" />
         </div>
       </div>
+      <Link
+        className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-blue"
+        href="/reports"
+      >
+        Open report center <ChevronRight className="size-3" />
+      </Link>
     </section>
   );
 }
@@ -510,35 +526,35 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
     return () => controller.abort();
   }, [loadWorkspaceDashboard, session, usingPersistentWorkspace]);
 
-  const metrics = useMemo(
-    () => [
+  const metrics = useMemo(() => {
+    const trends = buildMetricTrends(summary.payments, summary.profile.budget);
+    return [
       {
         label: "Total Spend",
         value: formatCurrency(summary.metrics.totalSpend),
         icon: WalletCards,
-        trend: [4, 8, 6, 12, 5, 13, 12, 18],
+        trend: trends.map((point) => point.spend),
       },
       {
         label: "Payments",
         value: summary.metrics.paymentCount.toLocaleString("en-US"),
         icon: RefreshCw,
-        trend: [5, 10, 8, 13, 7, 12, 9, 16],
+        trend: trends.map((point) => point.count),
       },
       {
         label: "Avg Payment",
         value: formatCurrency(summary.metrics.averagePayment),
         icon: CircleDollarSign,
-        trend: [6, 11, 16, 7, 10, 12, 18, 9, 13],
+        trend: trends.map((point) => point.average),
       },
       {
         label: "Budget Used",
         value: formatPercent(summary.metrics.budgetUsed),
         icon: PieChart,
-        trend: [7, 10, 12, 9, 15, 13, 18, 20],
+        trend: trends.map((point) => point.budgetUsed),
       },
-    ],
-    [summary],
-  );
+    ];
+  }, [summary]);
 
   async function analyzeWallet() {
     setIsLoading(true);
@@ -652,6 +668,11 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
             ))}
           </div>
 
+          <SpendActivityChart
+            payments={summary.payments}
+            from={summary.profile.dateRange.from}
+            to={summary.profile.dateRange.to}
+          />
           <SpendFlow categories={summary.categories} totalSpend={summary.metrics.totalSpend} />
           <RecentPayments payments={summary.payments} wallet={summary.profile.wallet} />
         </div>
@@ -660,7 +681,7 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
           <ProvidersPanel summary={summary} />
           <RisksPanel summary={summary} />
           <TaskPanel task={summary.tasks[0]} />
-          <AiInsight summary={summary} />
+          <CfoInsight summary={summary} />
         </aside>
       </div>
     </AppShell>
