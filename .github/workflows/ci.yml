@@ -30,6 +30,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
       - run: pnpm security:audit
       - run: pnpm build
       - run: docker build --target runner --tag agent-cfo-for-arc:ci .

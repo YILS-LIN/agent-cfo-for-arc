@@ -3,15 +3,15 @@
 :root {
   --background: #f7f8fb;
   --foreground: #111318;
-  --muted: #6c7380;
+  --muted: #59606c;
   --line: #e6e9f0;
   --card: rgba(255, 255, 255, 0.86);
-  --blue: #3465ff;
+  --blue: #2853d9;
   --blue-soft: #edf2ff;
   --violet: #7b61ff;
   --green: #20a464;
-  --orange: #f1902f;
-  --red: #e84d4f;
+  --orange: #9a4d00;
+  --red: #b4232a;
   --cyan: #13a6b5;
   --shadow: 0 20px 60px rgba(32, 43, 72, 0.08);
 }

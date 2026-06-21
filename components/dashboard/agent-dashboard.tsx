@@ -211,7 +211,7 @@ function SpendFlow({
 
 function RecentPayments({ payments, wallet }: { payments: PaymentEvent[]; wallet: string }) {
   return (
-    <section className="dashboard-card overflow-hidden rounded-lg p-4">
+    <section className="dashboard-card w-full min-w-0 max-w-full overflow-hidden rounded-lg p-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-base font-bold">Recent Payments</h2>
         <Link
@@ -222,7 +222,11 @@ function RecentPayments({ payments, wallet }: { payments: PaymentEvent[]; wallet
           <ChevronRight className="size-4" />
         </Link>
       </div>
-      <div className="overflow-x-auto">
+      <div
+        className="w-full min-w-0 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue"
+        tabIndex={0}
+        aria-label="Scrollable recent payments table"
+      >
         <table className="w-full min-w-[720px] border-collapse text-left text-sm">
           <thead>
             <tr className="text-xs text-muted">
@@ -651,7 +655,7 @@ export function AgentDashboard({ initialSummary }: AgentDashboardProps) {
       }
     >
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_370px]">
-        <div className="grid gap-4">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
           <WalletAnalyzer
             wallet={wallet}
             isLoading={isLoading}

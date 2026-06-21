@@ -50,7 +50,11 @@ export function SpendActivityChart({
           No payment activity in this reporting window.
         </div>
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <div
+          className="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue"
+          tabIndex={0}
+          aria-label="Scrollable spend activity chart"
+        >
           <svg
             className="h-auto min-w-[620px] w-full"
             viewBox={`0 0 ${width} ${height}`}

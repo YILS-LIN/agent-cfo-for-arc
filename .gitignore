@@ -8,5 +8,7 @@ build
 .env*
 !.env.example
 coverage
+playwright-report
+test-results
 *.tsbuildinfo
 docs/
