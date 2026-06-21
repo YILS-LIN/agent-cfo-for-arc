@@ -191,6 +191,11 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
       if (!session) return;
       setMutating(true);
       try {
+        const isLinkedWallet = session.identities.some(
+          (identity) =>
+            identity.type === "wallet" &&
+            identity.address?.toLowerCase() === address.trim().toLowerCase(),
+        );
         const response = await apiFetch("/api/wallets", {
           method: "POST",
           headers: {
@@ -200,14 +205,14 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
           body: JSON.stringify({
             address: address.trim(),
             chainId: 5_042_002,
-            source: "manual",
+            source: isLinkedWallet ? "metamask" : "manual",
             label: label.trim(),
             isPrimary: persistentWallets.length === 0,
-            ownershipStatus: "unverified",
+            ownershipStatus: isLinkedWallet ? "verified" : "unverified",
             capabilities: {
               observable: true,
-              ownershipVerified: false,
-              userSignable: false,
+              ownershipVerified: isLinkedWallet,
+              userSignable: isLinkedWallet,
               agentExecutable: false,
               policyEnforceable: false,
             },
@@ -218,7 +223,11 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
           return;
         }
         await loadPersistentWallets(session.workspaceId);
-        setMessage("Wallet connected to the persistent workspace.");
+        setMessage(
+          isLinkedWallet
+            ? "Verified sign-in wallet connected with user-signable capability."
+            : "Observation-only wallet connected to the persistent workspace.",
+        );
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to connect wallet");
         return;

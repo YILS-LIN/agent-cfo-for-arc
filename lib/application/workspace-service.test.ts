@@ -114,6 +114,64 @@ describe("WorkspaceApplicationService", () => {
     await expect(database.select().from(wallets)).resolves.toHaveLength(0);
   });
 
+  it("derives wallet ownership capabilities from verified sign-in identities", async () => {
+    const claimed = await service.createWallet(
+      owner,
+      {
+        ...walletInput(),
+        ownershipStatus: "managed",
+        capabilities: {
+          observable: true,
+          ownershipVerified: true,
+          userSignable: true,
+          agentExecutable: true,
+          policyEnforceable: true,
+        },
+      },
+      "untrusted-wallet-claims",
+    );
+    expect(claimed.wallet).toMatchObject({
+      source: "manual",
+      ownershipStatus: "unverified",
+      capabilities: {
+        observable: true,
+        ownershipVerified: false,
+        userSignable: false,
+        agentExecutable: false,
+        policyEnforceable: false,
+      },
+    });
+
+    const linkedAddress = "0x2222222222222222222222222222222222222222" as const;
+    const metamaskInput = {
+      ...walletInput(linkedAddress),
+      source: "metamask" as const,
+    };
+    await expect(
+      service.createWallet(owner, metamaskInput, "unlinked-metamask"),
+    ).rejects.toBeInstanceOf(ApplicationPermissionError);
+
+    const verified = await service.createWallet(
+      {
+        ...owner,
+        identities: [{ type: "wallet", subject: linkedAddress, address: linkedAddress }],
+      },
+      metamaskInput,
+      "linked-metamask",
+    );
+    expect(verified.wallet).toMatchObject({
+      source: "metamask",
+      ownershipStatus: "verified",
+      capabilities: {
+        observable: true,
+        ownershipVerified: true,
+        userSignable: true,
+        agentExecutable: false,
+        policyEnforceable: false,
+      },
+    });
+  });
+
   it("rejects reuse of an idempotency key with a different request", async () => {
     await service.createWallet(owner, walletInput(), "request-1");
 

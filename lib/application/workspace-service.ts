@@ -153,10 +153,40 @@ export class WorkspaceApplicationService {
   ) {
     requireWriteRole(context);
     const key = normalizeIdempotencyKey(idempotencyKey);
+    const normalizedAddress = input.address.toLowerCase();
+    const linkedWallet = context.identities.find(
+      (identity) =>
+        identity.type === "wallet" && identity.address?.toLowerCase() === normalizedAddress,
+    );
+    if (input.source === "metamask" && !linkedWallet) {
+      throw new ApplicationPermissionError(
+        "MetaMask ownership requires the same wallet to be linked to the current sign-in session",
+      );
+    }
+    if (input.source !== "manual" && input.source !== "external" && input.source !== "metamask") {
+      throw new ApplicationPermissionError(
+        "Circle wallet sources can only be created by a verified provider adapter",
+      );
+    }
+    const ownershipVerified = input.source === "metamask" && Boolean(linkedWallet);
+    const effectiveInput: CreateWalletInput = {
+      ...input,
+      source: ownershipVerified ? "metamask" : input.source,
+      ownershipStatus: ownershipVerified ? "verified" : "unverified",
+      capabilities: {
+        observable: true,
+        ownershipVerified,
+        userSignable: ownershipVerified,
+        agentExecutable: false,
+        policyEnforceable: false,
+      },
+      externalProvider: input.source === "external" ? input.externalProvider : undefined,
+      externalWalletId: input.source === "external" ? input.externalWalletId : undefined,
+    };
     const claim = await this.idempotency.claim(context, {
       operation: "wallet.create",
       key,
-      request: input,
+      request: effectiveInput,
     });
     if (claim.state === "completed") {
       const walletId = claim.record.response?.walletId;
@@ -178,7 +208,7 @@ export class WorkspaceApplicationService {
         const wallets = new WalletRepository(transaction);
         const audits = new AuditRepository(transaction);
         const idempotency = new IdempotencyRepository(transaction);
-        const created = await wallets.create(context, input);
+        const created = await wallets.create(context, effectiveInput);
         await audits.record(context, {
           actorUserId: mutationActor(context, source),
           action: "wallet.created",
