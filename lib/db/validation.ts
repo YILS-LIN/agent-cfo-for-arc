@@ -106,7 +106,31 @@ export const createBudgetInputSchema = z
   .refine((input) => input.periodEnd > input.periodStart, {
     message: "Budget period end must be after its start",
     path: ["periodEnd"],
+  })
+  .refine((input) => [input.walletId, input.taskId, input.providerId].filter(Boolean).length <= 1, {
+    message: "A budget can target only one scope level",
+    path: ["walletId"],
   });
+
+export const updateBudgetInputSchema = z
+  .object({
+    budgetId: z.string().uuid(),
+    expectedVersion: z.number().int().positive(),
+    amount: usdcAmount.optional(),
+    warningThreshold: z.number().positive().max(100).optional(),
+    periodStart: z.date().optional(),
+    periodEnd: z.date().optional(),
+    status: z.enum(["active", "paused", "archived"]).optional(),
+  })
+  .refine(
+    (input) =>
+      input.amount !== undefined ||
+      input.warningThreshold !== undefined ||
+      input.periodStart !== undefined ||
+      input.periodEnd !== undefined ||
+      input.status !== undefined,
+    { message: "At least one budget field must be updated" },
+  );
 
 export type CreateWalletInput = z.input<typeof createWalletInputSchema>;
 export type CreateTaskInput = z.input<typeof createTaskInputSchema>;
@@ -116,3 +140,4 @@ export type StoreAiCredentialInput = z.input<typeof storeAiCredentialInputSchema
 export type IngestPaymentInput = z.input<typeof ingestPaymentInputSchema>;
 export type IngestChainEventInput = z.input<typeof ingestChainEventInputSchema>;
 export type CreateBudgetInput = z.input<typeof createBudgetInputSchema>;
+export type UpdateBudgetInput = z.input<typeof updateBudgetInputSchema>;

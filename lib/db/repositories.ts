@@ -9,6 +9,7 @@ import {
   aiProviderCredentials,
   analysisSnapshots,
   auditEvents,
+  budgetRevisions,
   budgets,
   chainEvents,
   idempotencyKeys,
@@ -31,8 +32,10 @@ import {
   ingestPaymentInputSchema,
   setProviderPolicyInputSchema,
   storeAiCredentialInputSchema,
+  updateBudgetInputSchema,
   updateTaskStatusInputSchema,
   type CreateBudgetInput,
+  type UpdateBudgetInput,
   type CreateTaskInput,
   type CreateWalletInput,
   type IngestChainEventInput,
@@ -47,6 +50,7 @@ export class OptimisticLockError extends Error {}
 export class IdempotencyConflictError extends Error {}
 export class PaymentReplayConflictError extends Error {}
 export class ChainEventReplayConflictError extends Error {}
+export class BudgetConflictError extends Error {}
 
 export class WorkspaceRepository {
   constructor(private readonly database: AppDatabase) {}
@@ -418,15 +422,76 @@ export class BudgetRepository {
     return budget;
   }
 
-  async updateAmount(
+  async findOverlap(
     scope: WorkspaceScope,
-    input: { budgetId: string; expectedVersion: number; amount: string },
+    input: {
+      budgetId?: string;
+      walletId?: string | null;
+      taskId?: string | null;
+      providerId?: string | null;
+      periodStart: Date;
+      periodEnd: Date;
+    },
   ) {
-    const amount = createBudgetInputSchema.shape.amount.parse(input.amount);
+    const sameScope = input.walletId
+      ? eq(budgets.walletId, input.walletId)
+      : input.taskId
+        ? eq(budgets.taskId, input.taskId)
+        : input.providerId
+          ? eq(budgets.providerId, input.providerId)
+          : and(isNull(budgets.walletId), isNull(budgets.taskId), isNull(budgets.providerId));
+    const [conflict] = await this.database
+      .select()
+      .from(budgets)
+      .where(
+        and(
+          eq(budgets.workspaceId, scope.workspaceId),
+          sameScope,
+          ne(budgets.status, "archived"),
+          lt(budgets.periodStart, input.periodEnd),
+          gt(budgets.periodEnd, input.periodStart),
+          input.budgetId ? ne(budgets.id, input.budgetId) : undefined,
+        ),
+      )
+      .limit(1);
+    return conflict ?? null;
+  }
+
+  async update(scope: WorkspaceScope, rawInput: UpdateBudgetInput) {
+    const input = updateBudgetInputSchema.parse(rawInput);
+    const current = await this.getById(scope, input.budgetId);
+    if (!current) throw new RepositoryNotFoundError("Workspace budget not found");
+    if (current.status === "archived") {
+      throw new BudgetConflictError("Archived budgets are immutable");
+    }
+    const periodStart = input.periodStart ?? current.periodStart;
+    const periodEnd = input.periodEnd ?? current.periodEnd;
+    if (periodEnd <= periodStart)
+      throw new BudgetConflictError("Budget period end must be after its start");
+    if (input.status !== "archived") {
+      const overlap = await this.findOverlap(scope, {
+        budgetId: current.id,
+        walletId: current.walletId,
+        taskId: current.taskId,
+        providerId: current.providerId,
+        periodStart,
+        periodEnd,
+      });
+      if (overlap)
+        throw new BudgetConflictError(
+          "Budget period overlaps another active or paused budget at the same scope level",
+        );
+    }
     const [budget] = await this.database
       .update(budgets)
       .set({
-        amount,
+        ...(input.amount !== undefined ? { amount: input.amount } : {}),
+        ...(input.warningThreshold !== undefined
+          ? { warningThreshold: String(input.warningThreshold) }
+          : {}),
+        ...(input.periodStart !== undefined ? { periodStart: input.periodStart } : {}),
+        ...(input.periodEnd !== undefined ? { periodEnd: input.periodEnd } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
         version: sql`${budgets.version} + 1`,
         updatedAt: new Date(),
       })
@@ -440,6 +505,65 @@ export class BudgetRepository {
       .returning();
     if (!budget) throw new OptimisticLockError("Budget was updated by another request");
     return budget;
+  }
+}
+
+function budgetSnapshot(budget: typeof budgets.$inferSelect) {
+  return {
+    walletId: budget.walletId,
+    taskId: budget.taskId,
+    providerId: budget.providerId,
+    periodType: budget.periodType,
+    periodStart: budget.periodStart.toISOString(),
+    periodEnd: budget.periodEnd.toISOString(),
+    amount: budget.amount,
+    warningThreshold: budget.warningThreshold,
+    hardLimitRequested: budget.hardLimitRequested,
+    status: budget.status,
+  };
+}
+
+export class BudgetRevisionRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  list(scope: WorkspaceScope, budgetId: string) {
+    return this.database
+      .select()
+      .from(budgetRevisions)
+      .where(
+        and(
+          eq(budgetRevisions.workspaceId, scope.workspaceId),
+          eq(budgetRevisions.budgetId, budgetId),
+        ),
+      )
+      .orderBy(desc(budgetRevisions.version));
+  }
+
+  async record(
+    scope: WorkspaceScope,
+    budget: typeof budgets.$inferSelect,
+    input: {
+      action: string;
+      actorUserId?: string;
+      source: "web" | "mcp" | "system";
+      idempotencyKey?: string;
+    },
+  ) {
+    const { action, ...metadata } = input;
+    const [revision] = await this.database
+      .insert(budgetRevisions)
+      .values({
+        id: randomUUID(),
+        workspaceId: scope.workspaceId,
+        budgetId: budget.id,
+        version: budget.version,
+        action,
+        snapshot: budgetSnapshot(budget),
+        ...metadata,
+      })
+      .returning();
+    if (!revision) throw new Error("Budget revision insert returned no row");
+    return revision;
   }
 }
 

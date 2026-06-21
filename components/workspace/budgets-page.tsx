@@ -1,7 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CircleDollarSign, Gauge, Pencil, Plus, Save, ShieldCheck, X } from "lucide-react";
+import {
+  Archive,
+  CircleDollarSign,
+  Gauge,
+  History,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Save,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 
 import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
 import { AppShell } from "@/components/dashboard/app-shell";
@@ -40,6 +52,9 @@ type BudgetRow = {
   limit: UsdcAmount;
   version?: number;
   status?: PersistentBudget["status"];
+  remaining?: UsdcAmount;
+  projectedSpend?: UsdcAmount;
+  forecastStatus?: "inactive" | "over_limit" | "at_risk" | "warning" | "on_track";
 };
 
 type PersistentBudgetMetric = {
@@ -48,11 +63,27 @@ type PersistentBudgetMetric = {
   limit: UsdcAmount;
   paymentCount: number;
   used: number;
+  remaining: UsdcAmount;
+  projectedSpend: UsdcAmount;
+  projectedUsed: number;
+  warningThreshold: number;
+  forecastStatus: "inactive" | "over_limit" | "at_risk" | "warning" | "on_track";
+};
+
+type ScopeOption = { id: string; label: string };
+type BudgetRevision = {
+  id: string;
+  version: number;
+  action: string;
+  source: string;
+  createdAt: string;
+  snapshot: { amount: string; status: string; warningThreshold: string };
 };
 
 type PersistentBudgetSummary = {
   metrics: { totalSpend: UsdcAmount; assignedBudget: UsdcAmount; budgetUsed: number };
   budgets: PersistentBudgetMetric[];
+  providers: Array<{ id: string; name: string }>;
 };
 
 function todayInput() {
@@ -81,6 +112,9 @@ function persistentBudgetRow(budget: PersistentBudget, metric?: PersistentBudget
     limit: budget.amount,
     version: budget.version,
     status: budget.status,
+    remaining: metric?.remaining,
+    projectedSpend: metric?.projectedSpend,
+    forecastStatus: metric?.forecastStatus,
   };
 }
 
@@ -100,6 +134,18 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
   const [periodStart, setPeriodStart] = useState(todayInput);
   const [periodEnd, setPeriodEnd] = useState(tomorrowInput);
   const [warningThreshold, setWarningThreshold] = useState(80);
+  const [scopeType, setScopeType] = useState<"workspace" | "wallet" | "task" | "provider">(
+    "workspace",
+  );
+  const [scopeId, setScopeId] = useState("");
+  const [scopeOptions, setScopeOptions] = useState<Record<string, ScopeOption[]>>({
+    wallet: [],
+    task: [],
+    provider: [],
+  });
+  const [history, setHistory] = useState<{ budgetId: string; revisions: BudgetRevision[] } | null>(
+    null,
+  );
   const [monitoringEnabled, setMonitoringEnabled] = useState(true);
   const [mutating, setMutating] = useState(false);
   const [message, setMessage] = useState("Demo monitoring rules are local to this page.");
@@ -158,20 +204,57 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
 
   const loadPersistentBudgets = useCallback(
     async (workspaceId: string, signal?: AbortSignal) => {
-      const [budgetsResponse, summaryResponse] = await Promise.all([
-        apiFetch("/api/budgets", { signal }),
-        apiFetch("/api/analytics/summary", { signal }),
-      ]);
-      for (const response of [budgetsResponse, summaryResponse]) {
+      const [budgetsResponse, summaryResponse, walletsResponse, tasksResponse, providersResponse] =
+        await Promise.all([
+          apiFetch("/api/budgets", { signal }),
+          apiFetch("/api/analytics/summary", { signal }),
+          apiFetch("/api/wallets", { signal }),
+          apiFetch("/api/tasks", { signal }),
+          apiFetch("/api/providers", { signal }),
+        ]);
+      for (const response of [
+        budgetsResponse,
+        summaryResponse,
+        walletsResponse,
+        tasksResponse,
+        providersResponse,
+      ]) {
         if (!response.ok) {
           throw new Error(await getApiErrorMessage(response, "Unable to load workspace budgets"));
         }
       }
       const payload = (await budgetsResponse.json()) as { budgets: PersistentBudget[] };
       const summaryPayload = (await summaryResponse.json()) as PersistentBudgetSummary;
+      const walletsPayload = (await walletsResponse.json()) as {
+        wallets: Array<{ id: string; label: string }>;
+      };
+      const tasksPayload = (await tasksResponse.json()) as {
+        tasks: Array<{ id: string; name: string }>;
+      };
+      const providersPayload = (await providersResponse.json()) as {
+        policies: Array<{ providerKey: string; displayName: string }>;
+      };
       signal?.throwIfAborted();
       setPersistentBudgets(payload.budgets);
       setPersistentSummary(summaryPayload);
+      setScopeOptions({
+        wallet: walletsPayload.wallets.map((wallet) => ({ id: wallet.id, label: wallet.label })),
+        task: tasksPayload.tasks.map((task) => ({ id: task.id, label: task.name })),
+        provider: Array.from(
+          new Map([
+            ...providersPayload.policies.map(
+              (provider) =>
+                [
+                  provider.providerKey,
+                  { id: provider.providerKey, label: provider.displayName },
+                ] as const,
+            ),
+            ...summaryPayload.providers.map(
+              (provider) => [provider.id, { id: provider.id, label: provider.name }] as const,
+            ),
+          ]).values(),
+        ),
+      });
       setLoadedWorkspaceId(workspaceId);
       setMessage(
         payload.budgets.length
@@ -213,7 +296,7 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
     try {
       const response = await apiFetch(`/api/budgets/${encodeURIComponent(row.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ amount: draft, expectedVersion: row.version }),
       });
       if (!response.ok) {
@@ -230,8 +313,44 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
     }
   }
 
+  async function updateBudgetStatus(row: BudgetRow, status: PersistentBudget["status"]) {
+    if (!session || !row.version || !canWrite) return;
+    setMutating(true);
+    try {
+      const response = await apiFetch(`/api/budgets/${encodeURIComponent(row.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ expectedVersion: row.version, status }),
+      });
+      if (!response.ok) {
+        setMessage(await getApiErrorMessage(response, "Unable to change budget status"));
+        return;
+      }
+      await loadPersistentBudgets(session.workspaceId);
+      setMessage(`Budget ${status === "active" ? "resumed" : status}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to change budget status");
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function loadHistory(budgetId: string) {
+    const response = await apiFetch(`/api/budgets/${encodeURIComponent(budgetId)}`);
+    if (!response.ok) {
+      setMessage(await getApiErrorMessage(response, "Unable to load budget history"));
+      return;
+    }
+    const payload = (await response.json()) as { revisions: BudgetRevision[] };
+    setHistory({ budgetId, revisions: payload.revisions });
+  }
+
   async function createBudget() {
     if (!session || !canWrite) return;
+    if (scopeType !== "workspace" && !scopeId) {
+      setMessage(`Choose a ${scopeType} before creating the budget.`);
+      return;
+    }
     if (!/^(0|[1-9]\d*)(\.\d{1,6})?$/.test(amount) || usdcToNumber(amount) <= 0) {
       setMessage("Enter a positive USDC amount with no more than six decimal places.");
       return;
@@ -251,6 +370,9 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
+          ...(scopeType === "wallet" ? { walletId: scopeId } : {}),
+          ...(scopeType === "task" ? { taskId: scopeId } : {}),
+          ...(scopeType === "provider" ? { providerId: scopeId } : {}),
           periodType,
           periodStart: start.toISOString(),
           periodEnd: end.toISOString(),
@@ -266,7 +388,7 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
       await loadPersistentBudgets(session.workspaceId);
       setAmount("");
       setShowForm(false);
-      setMessage("Workspace budget created and audited.");
+      setMessage(`${scopeType[0]?.toUpperCase()}${scopeType.slice(1)} budget created and audited.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to create budget");
     } finally {
@@ -311,19 +433,52 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
         />
         <SummaryStat
           label="Monitoring policy"
-          value={monitoringEnabled ? "Enabled" : "Disabled"}
+          value={usingPersistentWorkspace ? "Active" : monitoringEnabled ? "Enabled" : "Disabled"}
           detail="Warns only; does not block onchain payments"
           icon={ShieldCheck}
-          tone={monitoringEnabled ? "green" : "orange"}
+          tone={usingPersistentWorkspace || monitoringEnabled ? "green" : "orange"}
         />
       </div>
 
       {showForm && usingPersistentWorkspace && (
         <SectionCard
-          title="Create a workspace budget"
+          title="Create a monitoring budget"
           description="Dates use UTC boundaries; enforcement remains observational until a managed wallet policy is connected."
         >
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[150px_1fr_1fr_140px_auto_auto]">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <select
+              className={inputClassName}
+              value={scopeType}
+              onChange={(event) => {
+                setScopeType(event.target.value as typeof scopeType);
+                setScopeId("");
+              }}
+              aria-label="Budget scope level"
+            >
+              <option value="workspace">Workspace</option>
+              <option value="wallet">Wallet</option>
+              <option value="task">Task</option>
+              <option value="provider">Provider</option>
+            </select>
+            {scopeType === "workspace" ? (
+              <div className="flex items-center rounded-md border border-line bg-surface px-3 text-sm text-muted">
+                Entire workspace
+              </div>
+            ) : (
+              <select
+                className={inputClassName}
+                value={scopeId}
+                onChange={(event) => setScopeId(event.target.value)}
+                aria-label={`Budget ${scopeType}`}
+              >
+                <option value="">Choose {scopeType}</option>
+                {scopeOptions[scopeType]?.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <select
               className={inputClassName}
               value={periodType}
@@ -333,6 +488,7 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
               <option value="custom">Custom</option>
+              {scopeType === "task" && <option value="task">Task lifetime</option>}
             </select>
             <input
               className={inputClassName}
@@ -355,17 +511,19 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
-            <Button onClick={() => void createBudget()} disabled={mutating}>
-              {mutating ? "Creating…" : "Create"}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setShowForm(false)}
-              disabled={mutating}
-              aria-label="Cancel creating budget"
-            >
-              <X className="size-4" />
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => void createBudget()} disabled={mutating}>
+                {mutating ? "Creating…" : "Create"}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setShowForm(false)}
+                disabled={mutating}
+                aria-label="Cancel creating budget"
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
           </div>
         </SectionCard>
       )}
@@ -376,12 +534,14 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
           description={message}
         >
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[980px] text-left text-sm">
               <thead>
                 <tr className="border-b border-line text-xs text-muted">
                   <th className="pb-3 font-semibold">Scope</th>
                   <th className="pb-3 font-semibold">Used</th>
                   <th className="pb-3 font-semibold">Limit</th>
+                  <th className="pb-3 font-semibold">Remaining</th>
+                  <th className="pb-3 font-semibold">Forecast</th>
                   <th className="pb-3 font-semibold">Utilization</th>
                   <th className="pb-3 text-right font-semibold">Action</th>
                 </tr>
@@ -389,14 +549,14 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
               <tbody>
                 {usingPersistentWorkspace && !persistentLoaded && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-muted">
+                    <td colSpan={7} className="py-8 text-center text-muted">
                       Loading workspace budgets…
                     </td>
                   </tr>
                 )}
                 {usingPersistentWorkspace && persistentLoaded && rows.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-muted">
+                    <td colSpan={7} className="py-8 text-center text-muted">
                       No budgets are configured for this workspace.
                     </td>
                   </tr>
@@ -430,6 +590,17 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
                           formatCurrency(row.limit)
                         )}
                       </td>
+                      <td className="py-3 font-medium">
+                        {row.remaining ? formatCurrency(row.remaining) : "—"}
+                      </td>
+                      <td className="py-3">
+                        <p className="font-medium">
+                          {row.projectedSpend ? formatCurrency(row.projectedSpend) : "—"}
+                        </p>
+                        <p className="mt-0.5 text-xs capitalize text-muted">
+                          {row.forecastStatus?.replace("_", " ") ?? "—"}
+                        </p>
+                      </td>
                       <td className="w-48 py-3">
                         <div className="mb-1 flex justify-between text-xs">
                           <span>{formatPercent(percent)}</span>
@@ -448,16 +619,65 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
                             <Save className="size-4" /> Save
                           </Button>
                         ) : (
-                          <Button
-                            variant="ghost"
-                            disabled={!canWrite}
-                            onClick={() => {
-                              setEditing(row.id);
-                              setDraft(row.limit);
-                            }}
-                          >
-                            <Pencil className="size-4" /> Edit
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            {usingPersistentWorkspace && (
+                              <Button
+                                variant="ghost"
+                                onClick={() => void loadHistory(row.id)}
+                                aria-label="View budget history"
+                                title="History"
+                              >
+                                <History className="size-4" />
+                              </Button>
+                            )}
+                            {row.status !== "archived" && (
+                              <Button
+                                variant="ghost"
+                                disabled={!canWrite || mutating}
+                                onClick={() => {
+                                  setEditing(row.id);
+                                  setDraft(row.limit);
+                                }}
+                                aria-label="Edit budget"
+                                title="Edit"
+                              >
+                                <Pencil className="size-4" />
+                              </Button>
+                            )}
+                            {row.status === "active" && (
+                              <Button
+                                variant="ghost"
+                                disabled={!canWrite || mutating}
+                                onClick={() => void updateBudgetStatus(row, "paused")}
+                                aria-label="Pause budget"
+                                title="Pause"
+                              >
+                                <Pause className="size-4" />
+                              </Button>
+                            )}
+                            {row.status === "paused" && (
+                              <Button
+                                variant="ghost"
+                                disabled={!canWrite || mutating}
+                                onClick={() => void updateBudgetStatus(row, "active")}
+                                aria-label="Resume budget"
+                                title="Resume"
+                              >
+                                <Play className="size-4" />
+                              </Button>
+                            )}
+                            {row.status && row.status !== "archived" && (
+                              <Button
+                                variant="ghost"
+                                disabled={!canWrite || mutating}
+                                onClick={() => void updateBudgetStatus(row, "archived")}
+                                aria-label="Archive budget"
+                                title="Archive"
+                              >
+                                <Archive className="size-4" />
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -484,12 +704,16 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
                   Raise a risk signal when observed spend exceeds the limit.
                 </span>
               </span>
-              <input
-                type="checkbox"
-                checked={monitoringEnabled}
-                onChange={(event) => setMonitoringEnabled(event.target.checked)}
-                className="size-5 accent-blue"
-              />
+              {usingPersistentWorkspace ? (
+                <ShieldCheck className="size-5 text-emerald-600" aria-label="Monitoring active" />
+              ) : (
+                <input
+                  type="checkbox"
+                  checked={monitoringEnabled}
+                  onChange={(event) => setMonitoringEnabled(event.target.checked)}
+                  className="size-5 accent-blue"
+                />
+              )}
             </label>
             <label className="block">
               <span className="text-xs font-semibold text-muted">Warning threshold</span>
@@ -513,6 +737,38 @@ export function BudgetsPage({ summary }: { summary: AgentSpendSummary }) {
           </div>
         </SectionCard>
       </div>
+
+      {history && (
+        <SectionCard
+          title="Budget history"
+          description="Immutable snapshots for every audited version."
+        >
+          <div className="mb-3 flex justify-end">
+            <Button variant="ghost" onClick={() => setHistory(null)}>
+              <X className="size-4" /> Close
+            </Button>
+          </div>
+          <div className="grid gap-2">
+            {history.revisions.map((revision) => (
+              <div
+                key={revision.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white p-3 text-sm"
+              >
+                <span className="font-semibold">
+                  v{revision.version} · {revision.action.replace("_", " ")}
+                </span>
+                <span>
+                  {formatCurrency(revision.snapshot.amount)} · {revision.snapshot.warningThreshold}%
+                  · {revision.snapshot.status}
+                </span>
+                <span className="text-xs text-muted">
+                  {revision.source} · {new Date(revision.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
     </AppShell>
   );
 }

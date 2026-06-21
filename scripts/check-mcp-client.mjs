@@ -11,6 +11,7 @@ const expectedTools = [
   "list_risks",
   "get_budgets",
   "set_monitoring_budget",
+  "update_monitoring_budget",
   "generate_cfo_report",
 ];
 

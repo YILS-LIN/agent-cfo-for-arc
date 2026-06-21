@@ -27,7 +27,7 @@ export type RiskBudget = {
 
 export type PersistentRiskRule = {
   ruleId: string;
-  rule: "budget" | "repeat_resource" | "velocity" | "price_spike";
+  rule: "budget" | "budget_forecast" | "repeat_resource" | "velocity" | "price_spike";
   severity: "low" | "medium" | "high";
   title: string;
   description: string;
@@ -57,13 +57,42 @@ function matchesBudget(payment: RiskPayment, budget: RiskBudget) {
 }
 
 function budgetRules(payments: RiskPayment[], budgets: RiskBudget[]): PersistentRiskRule[] {
-  return budgets.flatMap((budget) => {
+  return budgets.flatMap((budget): PersistentRiskRule[] => {
     if (budget.status !== "active") return [];
     const matching = payments.filter((payment) => matchesBudget(payment, budget));
     const spent = matching.reduce((total, payment) => total + parseUsdc(payment.amount), BigInt(0));
     const limit = parseUsdc(budget.amount);
     const warning = (limit * percentageBasisPoints(budget.warningThreshold)) / BigInt(10_000);
-    if (spent < warning) return [];
+    if (spent < warning) {
+      if (matching.length < 2 || spent === BigInt(0)) return [];
+      const latest = Math.max(...matching.map((payment) => payment.occurredAt.getTime()));
+      const elapsed = BigInt(Math.max(0, latest - budget.periodStart.getTime()));
+      const duration = BigInt(
+        Math.max(0, budget.periodEnd.getTime() - budget.periodStart.getTime()),
+      );
+      if (elapsed === BigInt(0) || duration === BigInt(0)) return [];
+      const projected = (spent * duration) / elapsed;
+      if (projected < limit) return [];
+      const facts = {
+        budgetId: budget.id,
+        budgetVersion: budget.version,
+        paymentIds: matching.map((payment) => payment.id).sort(),
+        spent: spent.toString(),
+        projected: projected.toString(),
+      };
+      return [
+        {
+          ruleId: fingerprint(`budget_forecast.${budget.id}`, facts),
+          rule: "budget_forecast" as const,
+          severity: "medium" as const,
+          title: "Budget pace projects an overrun",
+          description: `${formatUsdcUnits(projected)} USDC projected against a ${budget.amount} USDC limit`,
+          walletId: budget.walletId ?? undefined,
+          taskId: budget.taskId ?? undefined,
+          evidence: { ...facts, projectedSpend: formatUsdcUnits(projected), limit: budget.amount },
+        },
+      ];
+    }
     const exceeded = spent >= limit;
     const facts = {
       budgetId: budget.id,

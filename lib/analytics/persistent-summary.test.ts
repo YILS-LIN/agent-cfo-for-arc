@@ -37,6 +37,7 @@ describe("persistent workspace summary", () => {
           walletId: "wallet-1",
           taskId: "task-1",
           amount: "0.000006",
+          warningThreshold: "80",
           periodStart: new Date("2026-06-20T00:00:00.000Z"),
           periodEnd: new Date("2026-06-21T00:00:00.000Z"),
           status: "active",
@@ -58,7 +59,15 @@ describe("persistent workspace summary", () => {
       { spent: "0.000003", assignedBudget: "0.000006", budgetUsed: 50 },
     ]);
     expect(summary.tasks).toMatchObject([{ spent: "0.000003", paymentCount: 2, share: 100 }]);
-    expect(summary.budgets).toMatchObject([{ spent: "0.000003", used: 50 }]);
+    expect(summary.budgets).toMatchObject([
+      {
+        spent: "0.000003",
+        remaining: "0.000003",
+        projectedSpend: "0.000003",
+        used: 50,
+        forecastStatus: "on_track",
+      },
+    ]);
     expect(summary.providers).toMatchObject([{ name: "Data API", spent: "0.000003", share: 100 }]);
     expect(summary.categories).toMatchObject([{ category: "Data", spent: "0.000003" }]);
   });
@@ -81,6 +90,7 @@ describe("persistent workspace summary", () => {
         {
           id: "budget-1",
           amount: "10",
+          warningThreshold: "80",
           periodStart: new Date("2026-06-20T00:00:00.000Z"),
           periodEnd: new Date("2026-06-21T00:00:00.000Z"),
           status: "active",

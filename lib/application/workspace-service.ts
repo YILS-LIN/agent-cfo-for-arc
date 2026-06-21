@@ -9,6 +9,8 @@ import type { AppDatabase } from "@/lib/db/database";
 import {
   AnalysisRepository,
   AuditRepository,
+  BudgetConflictError,
+  BudgetRevisionRepository,
   BudgetRepository,
   IdempotencyRepository,
   PaymentRepository,
@@ -23,6 +25,7 @@ import type {
   CreateTaskInput,
   CreateWalletInput,
   IngestPaymentInput,
+  UpdateBudgetInput,
   UpdateTaskStatusInput,
 } from "@/lib/db/validation";
 import { ingestPaymentInputSchema } from "@/lib/db/validation";
@@ -56,6 +59,7 @@ function normalizeIdempotencyKey(value: string) {
 export class WorkspaceApplicationService {
   private readonly wallets: WalletRepository;
   private readonly budgets: BudgetRepository;
+  private readonly budgetRevisions: BudgetRevisionRepository;
   private readonly audits: AuditRepository;
   private readonly idempotency: IdempotencyRepository;
   private readonly tasks: TaskRepository;
@@ -66,6 +70,7 @@ export class WorkspaceApplicationService {
   constructor(private readonly database: AppDatabase) {
     this.wallets = new WalletRepository(database);
     this.budgets = new BudgetRepository(database);
+    this.budgetRevisions = new BudgetRevisionRepository(database);
     this.audits = new AuditRepository(database);
     this.idempotency = new IdempotencyRepository(database);
     this.tasks = new TaskRepository(database);
@@ -149,6 +154,12 @@ export class WorkspaceApplicationService {
 
   listBudgets(context: AuthContext) {
     return this.budgets.list(context);
+  }
+
+  async getBudget(context: AuthContext, budgetId: string) {
+    const budget = await this.budgets.getById(context, budgetId);
+    if (!budget) throw new RepositoryNotFoundError("Workspace budget not found");
+    return { budget, revisions: await this.budgetRevisions.list(context, budgetId) };
   }
 
   listTasks(context: AuthContext) {
@@ -572,9 +583,22 @@ export class WorkspaceApplicationService {
     try {
       const budget = await this.database.transaction(async (transaction) => {
         const budgets = new BudgetRepository(transaction);
+        const revisions = new BudgetRevisionRepository(transaction);
         const audits = new AuditRepository(transaction);
         const idempotency = new IdempotencyRepository(transaction);
+        const overlap = await budgets.findOverlap(context, effectiveInput);
+        if (overlap) {
+          throw new BudgetConflictError(
+            "Budget period overlaps another active or paused budget at the same scope level",
+          );
+        }
         const created = await budgets.create(context, effectiveInput);
+        await revisions.record(context, created, {
+          action: "created",
+          actorUserId: mutationActor(context, source),
+          source,
+          idempotencyKey: key,
+        });
         await audits.record(context, {
           actorUserId: mutationActor(context, source),
           action: "budget.created",
@@ -600,25 +624,68 @@ export class WorkspaceApplicationService {
     }
   }
 
-  async updateBudgetAmount(
+  async updateBudget(
     context: AuthContext,
-    input: { budgetId: string; expectedVersion: number; amount: string },
+    input: UpdateBudgetInput,
+    idempotencyKey: string,
     source: MutationSource = "web",
   ) {
     requireWriteRole(context);
-    return this.database.transaction(async (transaction) => {
-      const budgets = new BudgetRepository(transaction);
-      const audits = new AuditRepository(transaction);
-      const budget = await budgets.updateAmount(context, input);
-      await audits.record(context, {
-        actorUserId: mutationActor(context, source),
-        action: "budget.amount_updated",
-        entityType: "budget",
-        entityId: budget.id,
-        source,
-        payload: { amount: budget.amount, version: budget.version },
-      });
-      return budget;
+    const key = normalizeIdempotencyKey(idempotencyKey);
+    const claim = await this.idempotency.claim(context, {
+      operation: "budget.update",
+      key,
+      request: input,
     });
+    if (claim.state === "completed") {
+      const budgetId = claim.record.response?.budgetId;
+      if (typeof budgetId !== "string")
+        throw new RepositoryNotFoundError("Stored budget response is invalid");
+      const budget = await this.budgets.getById(context, budgetId);
+      if (!budget) throw new RepositoryNotFoundError("Stored budget no longer exists");
+      return { budget, replayed: true } as const;
+    }
+    if (claim.state !== "claimed") {
+      throw new IdempotencyRequestUnresolvedError(
+        "A request with this idempotency key is still unresolved",
+      );
+    }
+    try {
+      const budget = await this.database.transaction(async (transaction) => {
+        const budgets = new BudgetRepository(transaction);
+        const revisions = new BudgetRevisionRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const idempotency = new IdempotencyRepository(transaction);
+        const updated = await budgets.update(context, input);
+        const action = input.status ? "status_changed" : "updated";
+        await revisions.record(context, updated, {
+          action,
+          actorUserId: mutationActor(context, source),
+          source,
+          idempotencyKey: key,
+        });
+        await audits.record(context, {
+          actorUserId: mutationActor(context, source),
+          action: `budget.${action}`,
+          entityType: "budget",
+          entityId: updated.id,
+          source,
+          idempotencyKey: key,
+          payload: { version: updated.version, status: updated.status, amount: updated.amount },
+        });
+        await idempotency.complete(context, {
+          id: claim.record.id,
+          response: { budgetId: updated.id },
+        });
+        return updated;
+      });
+      return { budget, replayed: false } as const;
+    } catch (error) {
+      await this.idempotency.fail(context, {
+        id: claim.record.id,
+        errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+      });
+      throw error;
+    }
   }
 }

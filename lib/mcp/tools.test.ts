@@ -69,6 +69,10 @@ describe("Agent CFO MCP tools", () => {
       void args;
       return { budget: { id: "budget-1" }, replayed: false };
     });
+    const updateBudget = vi.fn(async (...args: unknown[]) => {
+      void args;
+      return { budget: { id: "budget-1", version: 2 }, replayed: false };
+    });
     const generate = vi.fn(async (...args: unknown[]) => {
       void args;
       return { report: { id: "report-1" }, replayed: false };
@@ -83,6 +87,7 @@ describe("Agent CFO MCP tools", () => {
       listRisks,
       listBudgets,
       createBudget,
+      updateBudget,
     } as unknown as WorkspaceApplicationService;
     const reports = { generate } as unknown as ReportService;
     const server = createAgentCfoMcpServer({ ...context, scopes }, { workspace, reports });
@@ -103,6 +108,7 @@ describe("Agent CFO MCP tools", () => {
       listRisks,
       listBudgets,
       createBudget,
+      updateBudget,
       generate,
     };
   }
@@ -120,6 +126,7 @@ describe("Agent CFO MCP tools", () => {
       "list_risks",
       "get_budgets",
       "set_monitoring_budget",
+      "update_monitoring_budget",
       "generate_cfo_report",
     ]);
   });
@@ -164,7 +171,7 @@ describe("Agent CFO MCP tools", () => {
   });
 
   it("marks every MCP mutation with idempotency and the MCP audit source", async () => {
-    const { client, createWallet, createBudget, generate } = await connect();
+    const { client, createWallet, createBudget, updateBudget, generate } = await connect();
     await client.callTool({
       name: "add_watched_wallet",
       arguments: {
@@ -181,6 +188,15 @@ describe("Agent CFO MCP tools", () => {
         periodEnd: "2026-07-01T00:00:00.000Z",
         amount: "100",
         idempotencyKey: "mcp-budget-1",
+      },
+    });
+    await client.callTool({
+      name: "update_monitoring_budget",
+      arguments: {
+        budgetId: "11111111-1111-4111-8111-111111111111",
+        expectedVersion: 1,
+        status: "paused",
+        idempotencyKey: "mcp-budget-pause-1",
       },
     });
     await client.callTool({
@@ -201,6 +217,12 @@ describe("Agent CFO MCP tools", () => {
       context,
       expect.objectContaining({ amount: "100", hardLimitRequested: false }),
       "mcp-budget-1",
+      "mcp",
+    );
+    expect(updateBudget).toHaveBeenCalledWith(
+      context,
+      expect.objectContaining({ expectedVersion: 1, status: "paused" }),
+      "mcp-budget-pause-1",
       "mcp",
     );
     expect(generate).toHaveBeenCalledWith(

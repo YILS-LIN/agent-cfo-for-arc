@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth/internal";
 import {
   ChainEventReplayConflictError,
+  BudgetConflictError,
   IdempotencyConflictError,
   OptimisticLockError,
   PaymentReplayConflictError,
@@ -172,6 +173,9 @@ export function apiErrorResponse(error: unknown) {
       { error: error.message, code: "IDEMPOTENCY_REQUEST_UNRESOLVED" },
       { status: 409, headers: { "Retry-After": "2" } },
     );
+  }
+  if (error instanceof BudgetConflictError) {
+    return NextResponse.json({ error: error.message, code: "BUDGET_CONFLICT" }, { status: 409 });
   }
   if (error instanceof OptimisticLockError) {
     return NextResponse.json(

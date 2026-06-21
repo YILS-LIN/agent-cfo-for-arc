@@ -47,6 +47,26 @@ describe("persistent risk rules", () => {
     expect(replay[0]?.ruleId).toBe(first[0]?.ruleId);
   });
 
+  it("flags a projected overrun before the warning threshold is reached", () => {
+    const budget = {
+      id: "budget-forecast",
+      amount: "10",
+      warningThreshold: "80",
+      periodStart: new Date("2026-06-20T00:00:00.000Z"),
+      periodEnd: new Date("2026-06-21T00:00:00.000Z"),
+      status: "active" as const,
+      version: 1,
+    };
+    const payments = [
+      payment(1, { amount: "3", occurredAt: new Date("2026-06-20T06:00:00.000Z") }),
+      payment(2, { amount: "3", occurredAt: new Date("2026-06-20T12:00:00.000Z") }),
+    ];
+
+    expect(evaluatePersistentRisks({ payments, budgets: [budget] })).toMatchObject([
+      { rule: "budget_forecast", severity: "medium" },
+    ]);
+  });
+
   it("detects high velocity and relative price spikes", () => {
     const payments = [1, 2, 3, 4, 5].map((index) =>
       payment(index, { amount: index === 5 ? "5" : "1" }),

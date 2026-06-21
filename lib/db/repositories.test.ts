@@ -110,7 +110,7 @@ describe("workspace-scoped repositories", () => {
       warningThreshold: 80,
     });
 
-    const updated = await repository.updateAmount(scope, {
+    const updated = await repository.update(scope, {
       budgetId: budget.id,
       expectedVersion: 1,
       amount: "2.000001",
@@ -118,7 +118,7 @@ describe("workspace-scoped repositories", () => {
     expect(updated).toMatchObject({ amount: "2.000001", version: 2 });
 
     await expect(
-      repository.updateAmount(scope, {
+      repository.update(scope, {
         budgetId: budget.id,
         expectedVersion: 1,
         amount: "3",

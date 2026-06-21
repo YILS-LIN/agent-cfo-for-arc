@@ -57,6 +57,13 @@
       "when": 1782000966530,
       "tag": "0007_nifty_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782007590168,
+      "tag": "0008_chemical_deathbird",
+      "breakpoints": true
     }
   ]
 }

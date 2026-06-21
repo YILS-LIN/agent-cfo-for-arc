@@ -25,12 +25,24 @@ export const createBudgetRequestSchema = z
   .refine((input) => input.periodEnd > input.periodStart, {
     message: "Budget period end must be after its start",
     path: ["periodEnd"],
+  })
+  .refine((input) => [input.walletId, input.taskId, input.providerId].filter(Boolean).length <= 1, {
+    message: "A budget can target only one scope level",
+    path: ["walletId"],
   });
 
-export const updateBudgetRequestSchema = z.object({
-  expectedVersion: z.number().int().positive(),
-  amount: createBudgetInputSchema.shape.amount,
-});
+export const updateBudgetRequestSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    amount: createBudgetInputSchema.shape.amount.optional(),
+    warningThreshold: createBudgetInputSchema.shape.warningThreshold.optional(),
+    periodStart: z.coerce.date().optional(),
+    periodEnd: z.coerce.date().optional(),
+    status: z.enum(["active", "paused", "archived"]).optional(),
+  })
+  .refine((input) => Object.keys(input).some((key) => key !== "expectedVersion"), {
+    message: "At least one budget field must be updated",
+  });
 
 export const updateWalletRequestSchema = z.object({
   isPrimary: z.literal(true),

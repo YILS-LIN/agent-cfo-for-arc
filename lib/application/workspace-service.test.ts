@@ -11,6 +11,7 @@ import {
 import type { AuthContext } from "@/lib/auth/types";
 import type { AppDatabase } from "@/lib/db/database";
 import {
+  BudgetConflictError,
   IdempotencyConflictError,
   OptimisticLockError,
   PaymentReplayConflictError,
@@ -20,6 +21,7 @@ import {
 import {
   auditEvents,
   analysisSnapshots,
+  budgetRevisions,
   budgets,
   idempotencyKeys,
   paymentEvents,
@@ -148,24 +150,65 @@ describe("WorkspaceApplicationService", () => {
       "budget-request-1",
     );
     const replay = await service.createBudget(owner, budgetInput(), "budget-request-1");
-    const updated = await service.updateBudgetAmount(owner, {
-      budgetId: first.budget.id,
-      expectedVersion: 1,
-      amount: "12.000001",
-    });
+    const updated = await service.updateBudget(
+      owner,
+      {
+        budgetId: first.budget.id,
+        expectedVersion: 1,
+        amount: "12.000001",
+      },
+      "budget-update-1",
+    );
 
     expect(replay).toMatchObject({ replayed: true, budget: { id: first.budget.id } });
     expect(first.budget.createdBy).toBe(owner.userId);
-    expect(updated).toMatchObject({ amount: "12.000001", version: 2 });
-    await expect(
-      service.updateBudgetAmount(owner, {
+    expect(updated).toMatchObject({ budget: { amount: "12.000001", version: 2 } });
+    const updateReplay = await service.updateBudget(
+      owner,
+      {
         budgetId: first.budget.id,
         expectedVersion: 1,
-        amount: "13",
-      }),
+        amount: "12.000001",
+      },
+      "budget-update-1",
+    );
+    expect(updateReplay).toMatchObject({ replayed: true, budget: { version: 2 } });
+    await expect(
+      service.updateBudget(
+        owner,
+        {
+          budgetId: first.budget.id,
+          expectedVersion: 1,
+          amount: "13",
+        },
+        "budget-update-2",
+      ),
     ).rejects.toBeInstanceOf(OptimisticLockError);
+    await expect(
+      service.createBudget(owner, budgetInput(), "overlapping-budget"),
+    ).rejects.toBeInstanceOf(BudgetConflictError);
+    const paused = await service.updateBudget(
+      owner,
+      { budgetId: first.budget.id, expectedVersion: 2, status: "paused" },
+      "budget-pause",
+    );
+    const archived = await service.updateBudget(
+      owner,
+      { budgetId: first.budget.id, expectedVersion: paused.budget.version, status: "archived" },
+      "budget-archive",
+    );
+    await expect(
+      service.updateBudget(
+        owner,
+        { budgetId: first.budget.id, expectedVersion: archived.budget.version, amount: "20" },
+        "budget-after-archive",
+      ),
+    ).rejects.toBeInstanceOf(BudgetConflictError);
+    const detail = await service.getBudget(owner, first.budget.id);
+    expect(detail.revisions.map((revision) => revision.version)).toEqual([4, 3, 2, 1]);
     await expect(database.select().from(budgets)).resolves.toHaveLength(1);
-    await expect(database.select().from(auditEvents)).resolves.toHaveLength(2);
+    await expect(database.select().from(budgetRevisions)).resolves.toHaveLength(4);
+    await expect(database.select().from(auditEvents)).resolves.toHaveLength(4);
   });
 
   it("creates and replays tasks, then protects status updates with versions", async () => {
@@ -250,7 +293,6 @@ describe("WorkspaceApplicationService", () => {
       owner,
       {
         walletId: wallet.wallet.id,
-        taskId: task.task.id,
         periodType: "daily",
         periodStart: new Date("2026-06-20T00:00:00.000Z"),
         periodEnd: new Date("2026-06-21T00:00:00.000Z"),
@@ -410,11 +452,15 @@ describe("WorkspaceApplicationService", () => {
     });
     expect(investigating).toMatchObject({ status: "investigating", version: 2 });
 
-    await service.updateBudgetAmount(owner, {
-      budgetId: budget.budget.id,
-      expectedVersion: 1,
-      amount: "100",
-    });
+    await service.updateBudget(
+      owner,
+      {
+        budgetId: budget.budget.id,
+        expectedVersion: 1,
+        amount: "100",
+      },
+      "risk-budget-update",
+    );
     const recalculated = await service.analyzeRisks(owner, range);
     const [resolved] = await service.listRisks(owner);
     expect(recalculated.resolvedCount).toBe(1);

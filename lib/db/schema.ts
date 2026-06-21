@@ -332,6 +332,43 @@ export const budgets = pgTable(
   ],
 );
 
+export type BudgetRevisionSnapshot = {
+  walletId: string | null;
+  taskId: string | null;
+  providerId: string | null;
+  periodType: "task" | "daily" | "weekly" | "monthly" | "custom";
+  periodStart: string;
+  periodEnd: string;
+  amount: string;
+  warningThreshold: string;
+  hardLimitRequested: boolean;
+  status: "active" | "paused" | "archived";
+};
+
+export const budgetRevisions = pgTable(
+  "budget_revisions",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    budgetId: uuid("budget_id")
+      .notNull()
+      .references(() => budgets.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    action: text("action").notNull(),
+    snapshot: jsonb("snapshot").$type<BudgetRevisionSnapshot>().notNull(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    source: auditSourceEnum("source").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("budget_revision_budget_version_unique").on(table.budgetId, table.version),
+    index("budget_revision_workspace_budget_idx").on(table.workspaceId, table.budgetId),
+  ],
+);
+
 export const providerPolicies = pgTable(
   "provider_policies",
   {
@@ -608,6 +645,7 @@ export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
   tasks: many(tasks),
   payments: many(paymentEvents),
   budgets: many(budgets),
+  budgetRevisions: many(budgetRevisions),
   analyses: many(analysisSnapshots),
   risks: many(riskSignals),
   reports: many(reports),

@@ -20,6 +20,7 @@ export type SummaryBudget = {
   periodStart: Date;
   periodEnd: Date;
   status: "active" | "paused" | "archived";
+  warningThreshold: string;
 };
 
 export type SummaryWallet = { id: string; label: string };
@@ -93,12 +94,39 @@ export function buildPersistentWorkspaceSummary(input: {
     const payments = input.payments.filter((payment) => matchesBudget(payment, budget));
     const spent = sumUnits(payments, (payment) => payment.amount);
     const limit = parseUsdc(budget.amount);
+    const remaining = limit > spent ? limit - spent : BigInt(0);
+    const totalDuration = BigInt(
+      Math.max(0, budget.periodEnd.getTime() - budget.periodStart.getTime()),
+    );
+    const effectiveEnd = Math.min(input.rangeEnd.getTime(), budget.periodEnd.getTime());
+    const elapsedDuration = BigInt(Math.max(0, effectiveEnd - budget.periodStart.getTime()));
+    const projected =
+      elapsedDuration > BigInt(0) && totalDuration > BigInt(0)
+        ? (spent * totalDuration) / elapsedDuration
+        : BigInt(0);
+    const used = percentage(spent, limit);
+    const projectedUsed = percentage(projected, limit);
+    const forecastStatus =
+      budget.status !== "active"
+        ? "inactive"
+        : spent >= limit
+          ? "over_limit"
+          : projected >= limit
+            ? "at_risk"
+            : used >= Number(budget.warningThreshold)
+              ? "warning"
+              : "on_track";
     return {
       id: budget.id,
       spent: formatUsdcUnits(spent),
       limit: budget.amount,
+      remaining: formatUsdcUnits(remaining),
+      projectedSpend: formatUsdcUnits(projected),
       paymentCount: payments.length,
-      used: percentage(spent, limit),
+      used,
+      projectedUsed,
+      warningThreshold: Number(budget.warningThreshold),
+      forecastStatus,
     };
   });
 

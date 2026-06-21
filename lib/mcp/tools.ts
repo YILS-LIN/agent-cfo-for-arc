@@ -271,6 +271,48 @@ export function createAgentCfoMcpServer(context: McpAuthContext, dependencies: M
   );
 
   server.registerTool(
+    "update_monitoring_budget",
+    {
+      title: "Update a monitoring budget",
+      description:
+        "Updates, pauses, resumes, or archives an audited monitoring budget using optimistic locking.",
+      inputSchema: {
+        budgetId: z.string().uuid(),
+        expectedVersion: z.number().int().positive(),
+        amount: z
+          .string()
+          .regex(/^\d+(?:\.\d{1,6})?$/)
+          .optional(),
+        warningThreshold: z.number().positive().max(100).optional(),
+        periodStart: z.string().datetime().optional(),
+        periodEnd: z.string().datetime().optional(),
+        status: z.enum(["active", "paused", "archived"]).optional(),
+        idempotencyKey: z.string().trim().min(1).max(255),
+      },
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (input) => {
+      requireScope(context, "budgets:write");
+      return jsonResult(
+        await dependencies.workspace.updateBudget(
+          context,
+          {
+            budgetId: input.budgetId,
+            expectedVersion: input.expectedVersion,
+            amount: input.amount,
+            warningThreshold: input.warningThreshold,
+            periodStart: input.periodStart ? new Date(input.periodStart) : undefined,
+            periodEnd: input.periodEnd ? new Date(input.periodEnd) : undefined,
+            status: input.status,
+          },
+          input.idempotencyKey,
+          "mcp",
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
     "generate_cfo_report",
     {
       title: "Generate CFO report",
