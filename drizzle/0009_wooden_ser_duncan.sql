@@ -1,0 +1,1 @@
+ALTER TABLE "wallets" ADD COLUMN "archived_at" timestamp with time zone;

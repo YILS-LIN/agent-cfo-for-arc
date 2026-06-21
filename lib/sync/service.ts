@@ -40,6 +40,7 @@ export class WorkspaceSyncService {
     if (context.role === "viewer") throw new SyncPermissionError("Viewer access is read-only");
     const wallet = await this.wallets.getById(context, input.walletId);
     if (!wallet) throw new RepositoryNotFoundError("Workspace wallet not found");
+    if (wallet.archivedAt) throw new RepositoryNotFoundError("Active workspace wallet not found");
     const adapter = this.adapters.get(input.source);
     if (!adapter) {
       throw new SyncAdapterNotConfiguredError(`No ${input.source} sync adapter is configured`);

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Check, Clipboard, Plus, RefreshCw, Wallet, X } from "lucide-react";
+import { Archive, Check, Clipboard, Plus, RefreshCw, Wallet, X } from "lucide-react";
 
 import { AppShell } from "@/components/dashboard/app-shell";
 import { useWorkspaceSession } from "@/components/auth/workspace-session-provider";
@@ -316,6 +316,28 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
     }
   }
 
+  async function archiveWallet(wallet: WalletRecord) {
+    if (!wallet.id || !session || !canWrite || !usingPersistentWorkspace) return;
+    if (!window.confirm(`Remove ${wallet.label} from active workspace wallets?`)) return;
+    setMutating(true);
+    try {
+      const response = await apiFetch(`/api/wallets/${encodeURIComponent(wallet.id)}`, {
+        method: "DELETE",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
+      if (!response.ok) {
+        setMessage(await getApiErrorMessage(response, "Unable to remove wallet"));
+        return;
+      }
+      await loadPersistentWallets(session.workspaceId);
+      setMessage(`${wallet.label} archived; historical payment facts remain available.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to remove wallet");
+    } finally {
+      setMutating(false);
+    }
+  }
+
   const totalBudget = wallets.reduce((total, wallet) => total + usdcToNumber(wallet.budget), 0);
   const totalSpent = wallets.reduce((total, wallet) => total + usdcToNumber(wallet.spent), 0);
   const utilization = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
@@ -506,6 +528,15 @@ export function WalletsPage({ summary }: { summary: AgentSpendSummary }) {
                       onClick={() => void setPrimary(wallet)}
                     >
                       Set primary
+                    </Button>
+                  )}
+                  {usingPersistentWorkspace && (
+                    <Button
+                      variant="ghost"
+                      disabled={!canWrite || mutating}
+                      onClick={() => void archiveWallet(wallet)}
+                    >
+                      <Archive className="size-4" /> Remove
                     </Button>
                   )}
                   <Link

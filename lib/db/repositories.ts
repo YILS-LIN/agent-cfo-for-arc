@@ -111,11 +111,15 @@ export class WorkspaceRepository {
 export class WalletRepository {
   constructor(private readonly database: AppDatabase) {}
 
-  async list(scope: WorkspaceScope) {
+  async list(scope: WorkspaceScope, options: { includeArchived?: boolean } = {}) {
     return this.database
       .select()
       .from(wallets)
-      .where(eq(wallets.workspaceId, scope.workspaceId))
+      .where(
+        options.includeArchived
+          ? eq(wallets.workspaceId, scope.workspaceId)
+          : and(eq(wallets.workspaceId, scope.workspaceId), isNull(wallets.archivedAt)),
+      )
       .orderBy(desc(wallets.isPrimary), asc(wallets.createdAt));
   }
 
@@ -131,6 +135,42 @@ export class WalletRepository {
   async create(scope: WorkspaceScope, rawInput: CreateWalletInput) {
     const input = createWalletInputSchema.parse(rawInput);
     const now = new Date();
+    if (input.isPrimary) {
+      await this.database
+        .update(wallets)
+        .set({ isPrimary: false, updatedAt: now })
+        .where(
+          and(
+            eq(wallets.workspaceId, scope.workspaceId),
+            eq(wallets.isPrimary, true),
+            isNull(wallets.archivedAt),
+          ),
+        );
+    }
+    const [restored] = await this.database
+      .update(wallets)
+      .set({
+        address: input.address,
+        source: input.source,
+        label: input.label,
+        ownershipStatus: input.ownershipStatus,
+        capabilities: input.capabilities,
+        isPrimary: input.isPrimary,
+        externalProvider: input.externalProvider,
+        externalWalletId: input.externalWalletId,
+        archivedAt: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(wallets.workspaceId, scope.workspaceId),
+          eq(wallets.chainId, input.chainId),
+          eq(wallets.normalizedAddress, input.address.toLowerCase()),
+          sql`${wallets.archivedAt} is not null`,
+        ),
+      )
+      .returning();
+    if (restored) return restored;
     const [wallet] = await this.database
       .insert(wallets)
       .values({
@@ -152,6 +192,38 @@ export class WalletRepository {
       .returning();
 
     if (!wallet) throw new Error("Wallet insert returned no row");
+    return wallet;
+  }
+
+  async archive(scope: WorkspaceScope, walletId: string) {
+    const now = new Date();
+    const current = await this.getById(scope, walletId);
+    const [wallet] = await this.database
+      .update(wallets)
+      .set({ archivedAt: now, isPrimary: false, updatedAt: now })
+      .where(
+        and(
+          eq(wallets.workspaceId, scope.workspaceId),
+          eq(wallets.id, walletId),
+          isNull(wallets.archivedAt),
+        ),
+      )
+      .returning();
+    if (!wallet) throw new RepositoryNotFoundError("Active workspace wallet not found");
+    if (current?.isPrimary) {
+      const [replacement] = await this.database
+        .select({ id: wallets.id })
+        .from(wallets)
+        .where(and(eq(wallets.workspaceId, scope.workspaceId), isNull(wallets.archivedAt)))
+        .orderBy(asc(wallets.createdAt))
+        .limit(1);
+      if (replacement) {
+        await this.database
+          .update(wallets)
+          .set({ isPrimary: true, updatedAt: now })
+          .where(and(eq(wallets.workspaceId, scope.workspaceId), eq(wallets.id, replacement.id)));
+      }
+    }
     return wallet;
   }
 

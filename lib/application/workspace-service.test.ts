@@ -207,6 +207,68 @@ describe("WorkspaceApplicationService", () => {
     await expect(database.select().from(auditEvents)).resolves.toHaveLength(3);
   });
 
+  it("archives wallet associations without deleting historical payment facts", async () => {
+    const first = await service.createWallet(
+      owner,
+      { ...walletInput(), isPrimary: true },
+      "archive-wallet-1",
+    );
+    const second = await service.createWallet(
+      owner,
+      walletInput("0x2222222222222222222222222222222222222222"),
+      "archive-wallet-2",
+    );
+    const budget = await service.createBudget(
+      owner,
+      { ...budgetInput(), walletId: first.wallet.id },
+      "archive-wallet-budget",
+    );
+    await service.ingestPayment(owner, {
+      walletId: first.wallet.id,
+      externalId: "archived-wallet-payment",
+      amount: "2",
+      occurredAt: new Date("2026-06-20T12:00:00.000Z"),
+      source: "arc",
+    });
+
+    const archived = await service.archiveWallet(owner, first.wallet.id, "archive-wallet");
+    const replay = await service.archiveWallet(owner, first.wallet.id, "archive-wallet");
+    const active = await service.listWallets(owner);
+    const summary = await service.getWorkspaceSummary(owner, {
+      rangeStart: new Date("2026-06-20T00:00:00.000Z"),
+      rangeEnd: new Date("2026-06-21T00:00:00.000Z"),
+    });
+
+    expect(archived.archivedAt).toBeInstanceOf(Date);
+    expect(replay.id).toBe(archived.id);
+    expect(active).toMatchObject([{ id: second.wallet.id, isPrimary: true }]);
+    expect(summary.metrics).toMatchObject({
+      totalSpend: "2",
+      paymentCount: 1,
+      assignedBudget: "0",
+    });
+    expect(summary.wallets).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: first.wallet.id, spent: "2" })]),
+    );
+    await expect(database.select().from(paymentEvents)).resolves.toHaveLength(1);
+    await expect(service.getBudget(owner, budget.budget.id)).resolves.toMatchObject({
+      budget: { status: "archived", version: 2 },
+      revisions: [{ action: "status_changed" }, { action: "created" }],
+    });
+
+    const restored = await service.createWallet(
+      owner,
+      { ...walletInput(), isPrimary: true },
+      "restore-wallet",
+    );
+    expect(restored.wallet).toMatchObject({
+      id: first.wallet.id,
+      archivedAt: null,
+      isPrimary: true,
+    });
+    expect((await service.listWallets(owner)).filter((wallet) => wallet.isPrimary)).toHaveLength(1);
+  });
+
   it("creates and replays budgets, then updates with optimistic locking", async () => {
     const first = await service.createBudget(
       owner,

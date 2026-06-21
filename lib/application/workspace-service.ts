@@ -323,7 +323,7 @@ export class WorkspaceApplicationService {
       this.payments.listForAnalysis(context, { from: input.rangeStart, to: input.rangeEnd }),
       this.payments.listForAnalysis(context, previousRange(input)),
       this.budgets.list(context),
-      this.wallets.list(context),
+      this.wallets.list(context, { includeArchived: true }),
       this.tasks.list(context),
       this.risks.list(context),
     ]);
@@ -407,7 +407,7 @@ export class WorkspaceApplicationService {
       this.payments.listForAnalysis(context, { from: input.rangeStart, to: input.rangeEnd }),
       this.payments.listForAnalysis(context, previousRange(input)),
       this.budgets.list(context),
-      this.wallets.list(context),
+      this.wallets.list(context, { includeArchived: true }),
       this.tasks.list(context),
       this.risks.list(context),
     ]);
@@ -557,6 +557,7 @@ export class WorkspaceApplicationService {
     const normalizedInput = ingestPaymentInputSchema.parse(input);
     const wallet = await this.wallets.getById(context, normalizedInput.walletId);
     if (!wallet) throw new RepositoryNotFoundError("Workspace wallet not found");
+    if (wallet.archivedAt) throw new RepositoryNotFoundError("Active workspace wallet not found");
     if (normalizedInput.taskId) {
       const task = await this.tasks.getById(context, normalizedInput.taskId);
       if (!task) throw new RepositoryNotFoundError("Workspace task not found");
@@ -697,6 +698,71 @@ export class WorkspaceApplicationService {
           source,
           idempotencyKey: key,
           payload: { address: wallet.normalizedAddress, chainId: wallet.chainId },
+        });
+        return wallet;
+      },
+    });
+  }
+
+  async archiveWallet(
+    context: AuthContext,
+    walletId: string,
+    idempotencyKey: string,
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    return this.runIdempotentUpdate(context, {
+      operation: "wallet.archive",
+      idempotencyKey,
+      request: { walletId },
+      load: (entityId) => this.wallets.getById(context, entityId),
+      mutate: async (transaction, key) => {
+        const wallets = new WalletRepository(transaction);
+        const budgets = new BudgetRepository(transaction);
+        const revisions = new BudgetRevisionRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const wallet = await wallets.archive(context, walletId);
+        const dependentBudgets = (await budgets.list(context)).filter(
+          (budget) => budget.walletId === walletId && budget.status !== "archived",
+        );
+        for (const budget of dependentBudgets) {
+          const archivedBudget = await budgets.update(context, {
+            budgetId: budget.id,
+            expectedVersion: budget.version,
+            status: "archived",
+          });
+          await revisions.record(context, archivedBudget, {
+            action: "status_changed",
+            actorUserId: mutationActor(context, source),
+            source,
+            idempotencyKey: key,
+          });
+          await audits.record(context, {
+            actorUserId: mutationActor(context, source),
+            action: "budget.status_changed",
+            entityType: "budget",
+            entityId: archivedBudget.id,
+            source,
+            idempotencyKey: key,
+            payload: {
+              status: "archived",
+              version: archivedBudget.version,
+              reason: "wallet_archived",
+            },
+          });
+        }
+        await audits.record(context, {
+          actorUserId: mutationActor(context, source),
+          action: "wallet.archived",
+          entityType: "wallet",
+          entityId: wallet.id,
+          source,
+          idempotencyKey: key,
+          payload: {
+            address: wallet.normalizedAddress,
+            chainId: wallet.chainId,
+            preservedPaymentFacts: true,
+          },
         });
         return wallet;
       },

@@ -165,6 +165,7 @@ export const wallets = pgTable(
     externalWalletId: text("external_wallet_id"),
     syncStatus: syncStatusEnum("sync_status").notNull().default("idle"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

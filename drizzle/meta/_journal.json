@@ -64,6 +64,13 @@
       "when": 1782007590168,
       "tag": "0008_chemical_deathbird",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782027595884,
+      "tag": "0009_wooden_ser_duncan",
+      "breakpoints": true
     }
   ]
 }
