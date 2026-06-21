@@ -2,7 +2,11 @@ import { randomBytes } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { AiCredentialPermissionError, AiCredentialService } from "@/lib/ai/credential-service";
+import {
+  AiCredentialNotConfiguredError,
+  AiCredentialPermissionError,
+  AiCredentialService,
+} from "@/lib/ai/credential-service";
 import type { AuthContext } from "@/lib/auth/types";
 import type { AppDatabase } from "@/lib/db/database";
 import { OptimisticLockError, WorkspaceRepository } from "@/lib/db/repositories";
@@ -94,5 +98,24 @@ describe("AiCredentialService", () => {
         },
       ),
     ).rejects.toBeInstanceOf(AiCredentialPermissionError);
+  });
+
+  it("never exposes credentials across workspaces", async () => {
+    await service.store(owner, {
+      provider: "openai",
+      model: "gpt-5.5",
+      secret: "sk-owner-secret-value-1234",
+      expectedVersion: 0,
+    });
+    const other = await new WorkspaceRepository(database).createPersonalWorkspace({
+      displayName: "Other AI Owner",
+      email: "other-ai-owner@example.com",
+    });
+    const otherContext: AuthContext = { ...other, role: "owner", identities: [] };
+
+    await expect(service.list(otherContext)).resolves.toEqual([]);
+    await expect(service.getDecrypted(otherContext, "openai")).rejects.toBeInstanceOf(
+      AiCredentialNotConfiguredError,
+    );
   });
 });

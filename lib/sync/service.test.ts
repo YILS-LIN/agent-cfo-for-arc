@@ -126,6 +126,29 @@ describe("WorkspaceSyncService", () => {
     await expect(first).resolves.toMatchObject({ cursor: { status: "ready" } });
   });
 
+  it("releases a failed lease and recovers on the next sync", async () => {
+    let attempts = 0;
+    const adapter: PaymentSyncAdapter = {
+      source: "arc",
+      async sync() {
+        attempts += 1;
+        if (attempts === 1) throw new Error("temporary upstream failure");
+        return { payments: [], cursor: "recovered" };
+      },
+    };
+    const service = new WorkspaceSyncService(database, application, [adapter]);
+
+    await expect(service.sync(owner, { walletId, source: "arc" })).rejects.toThrow(
+      "temporary upstream failure",
+    );
+    await expect(service.list(owner)).resolves.toMatchObject([
+      { status: "failed", leaseToken: null, lastError: "temporary upstream failure" },
+    ]);
+    await expect(service.sync(owner, { walletId, source: "arc" })).resolves.toMatchObject({
+      cursor: { status: "ready", cursor: "recovered", leaseToken: null, lastError: null },
+    });
+  });
+
   it("does not claim Circle discovery support for arbitrary wallets", async () => {
     await expect(
       new PublicCircleEvidenceSyncAdapter().sync({

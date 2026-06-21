@@ -8,7 +8,11 @@ import { ApplicationPermissionError } from "@/lib/application/workspace-service"
 import { buildAgentSpendSummary } from "@/lib/analytics/agent-summary";
 import type { AuthContext } from "@/lib/auth/types";
 import type { AppDatabase } from "@/lib/db/database";
-import { IdempotencyConflictError, WorkspaceRepository } from "@/lib/db/repositories";
+import {
+  IdempotencyConflictError,
+  RepositoryNotFoundError,
+  WorkspaceRepository,
+} from "@/lib/db/repositories";
 import { auditEvents, idempotencyKeys, reports } from "@/lib/db/schema";
 import { createTestDatabase } from "@/lib/db/testing";
 import { ReportService } from "@/lib/reports/service";
@@ -111,5 +115,20 @@ describe("ReportService", () => {
         "range-sensitive",
       ),
     ).rejects.toBeInstanceOf(IdempotencyConflictError);
+  });
+
+  it("never exposes generated reports across workspaces", async () => {
+    const service = new ReportService(database, workspaceService, credentials);
+    const generated = await service.generate(owner, input, "private-report");
+    const other = await new WorkspaceRepository(database).createPersonalWorkspace({
+      displayName: "Bob",
+      email: `${randomUUID()}@example.com`,
+    });
+    const otherContext: AuthContext = { ...other, role: "owner", identities: [] };
+
+    await expect(service.list(otherContext)).resolves.toEqual([]);
+    await expect(service.get(otherContext, generated.report.id)).rejects.toBeInstanceOf(
+      RepositoryNotFoundError,
+    );
   });
 });
