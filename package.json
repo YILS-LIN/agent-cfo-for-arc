@@ -104,6 +104,15 @@
       "postcss": "^8.5.10",
       "uuid": "^11.1.1",
       "ws": "^8.21.0"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@reown/appkit",
+      "bufferutil",
+      "esbuild",
+      "keccak",
+      "sharp",
+      "unrs-resolver",
+      "utf-8-validate"
+    ]
   }
 }
