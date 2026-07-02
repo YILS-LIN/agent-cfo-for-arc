@@ -104,6 +104,35 @@ describe("AuthService", () => {
     );
   });
 
+  it("lists available workspaces and resolves an explicit workspace selection", async () => {
+    const service = new AuthService(database, new FakeAuthProvider(session()));
+    const owner = await service.resolve(new Request("https://example.com"));
+    const operatorWorkspaceId = randomUUID();
+    await database.insert(workspaces).values({
+      id: operatorWorkspaceId,
+      ownerId: owner.userId,
+      name: "Operator workspace",
+    });
+    await database
+      .insert(workspaceMembers)
+      .values({ workspaceId: operatorWorkspaceId, userId: owner.userId, role: "operator" });
+
+    await expect(service.listWorkspaces(new Request("https://example.com"))).resolves.toEqual([
+      expect.objectContaining({ workspaceId: owner.workspaceId, role: "owner" }),
+      {
+        workspaceId: operatorWorkspaceId,
+        name: "Operator workspace",
+        role: "operator",
+      },
+    ]);
+    await expect(
+      service.resolve(new Request("https://example.com"), operatorWorkspaceId),
+    ).resolves.toMatchObject({
+      workspaceId: operatorWorkspaceId,
+      role: "operator",
+    });
+  });
+
   it("rejects a workspace cookie without membership", async () => {
     const service = new AuthService(database, new FakeAuthProvider(session()));
     await expect(

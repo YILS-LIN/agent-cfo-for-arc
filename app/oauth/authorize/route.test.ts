@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET, POST } from "@/app/oauth/authorize/route";
 
 const authService = {
+  listWorkspaces: vi.fn(),
   resolve: vi.fn(),
 };
 const authorizationService = {
@@ -19,6 +20,7 @@ vi.mock("@/lib/mcp/server", () => ({
 
 describe("POST /oauth/authorize", () => {
   beforeEach(() => {
+    authService.listWorkspaces.mockReset();
     authService.resolve.mockReset();
     authorizationService.authorize.mockReset();
   });
@@ -49,6 +51,7 @@ describe("POST /oauth/authorize", () => {
           state: "abc",
           code_challenge: "x".repeat(43),
           code_challenge_method: "S256",
+          workspace_id: "workspace-1",
         }),
       }),
     );
@@ -65,23 +68,24 @@ describe("POST /oauth/authorize", () => {
       state: "abc",
       code_challenge: "x".repeat(43),
       code_challenge_method: "S256",
+      workspace_id: "workspace-1",
     });
+    expect(authService.resolve).toHaveBeenCalledWith(expect.any(Request), "workspace-1");
   });
 });
 
 describe("GET /oauth/authorize", () => {
   beforeEach(() => {
+    authService.listWorkspaces.mockReset();
     authService.resolve.mockReset();
     authorizationService.authorize.mockReset();
   });
 
   it("renders a no-store authorization confirmation page for the logged-in user", async () => {
-    authService.resolve.mockResolvedValue({
-      userId: "user-1",
-      workspaceId: "workspace-1",
-      role: "owner",
-      identities: [{ type: "google", subject: "did:privy:user-1" }],
-    });
+    authService.listWorkspaces.mockResolvedValue([
+      { workspaceId: "workspace-1", name: "Primary Workspace", role: "owner" },
+      { workspaceId: "workspace-2", name: "Ops Workspace", role: "operator" },
+    ]);
 
     const response = await GET(
       new Request(
@@ -94,7 +98,9 @@ describe("GET /oauth/authorize", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Content-Type")).toContain("text/html");
     expect(html).toContain("Authorize MCP access");
-    expect(html).toContain("workspace-1");
+    expect(html).toContain("Primary Workspace");
+    expect(html).toContain("Ops Workspace");
+    expect(html).toContain('name="workspace_id" value="workspace-1"');
     expect(html).toContain("wallets:read");
     expect(html).toContain('name="code_challenge_method" value="S256"');
   });

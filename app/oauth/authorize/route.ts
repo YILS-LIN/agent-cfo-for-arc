@@ -9,9 +9,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const context = await getAuthService().resolve(request);
+    const workspaces = await getAuthService().listWorkspaces(request);
     const params = new URL(request.url).searchParams;
-    return new Response(renderAuthorizationPage(context.workspaceId, params), {
+    return new Response(renderAuthorizationPage(workspaces, params), {
       headers: {
         "Cache-Control": "no-store",
         "Content-Type": "text/html; charset=utf-8",
@@ -24,8 +24,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const context = await getAuthService().resolve(request);
     const input = Object.fromEntries(await request.formData());
+    const workspaceId = typeof input.workspace_id === "string" ? input.workspace_id : undefined;
+    const context = await getAuthService().resolve(request, workspaceId);
     const authorization = await getOAuthAuthorizationService().authorize(context, input);
     return NextResponse.redirect(authorization.redirectTo, 302);
   } catch (error) {
@@ -33,7 +34,10 @@ export async function POST(request: Request) {
   }
 }
 
-function renderAuthorizationPage(workspaceId: string, params: URLSearchParams) {
+function renderAuthorizationPage(
+  workspaces: Array<{ workspaceId: string; name: string; role: string }>,
+  params: URLSearchParams,
+) {
   const fields = [
     "response_type",
     "client_id",
@@ -51,6 +55,16 @@ function renderAuthorizationPage(workspaceId: string, params: URLSearchParams) {
     .join("");
   const scope = params.get("scope") ?? "";
   const clientId = params.get("client_id") ?? "";
+  const workspaceOptions = workspaces
+    .map(
+      (workspace, index) => `<label>
+          <input type="radio" name="workspace_id" value="${escapeHtml(workspace.workspaceId)}"${
+            index === 0 ? " checked" : ""
+          } />
+          ${escapeHtml(workspace.name)} (${escapeHtml(workspace.role)})
+        </label>`,
+    )
+    .join("");
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -62,7 +76,10 @@ function renderAuthorizationPage(workspaceId: string, params: URLSearchParams) {
     <main>
       <h1>Authorize MCP access</h1>
       <p>Client: ${escapeHtml(clientId)}</p>
-      <p>Workspace: ${escapeHtml(workspaceId)}</p>
+      <fieldset>
+        <legend>Workspace</legend>
+        ${workspaceOptions}
+      </fieldset>
       <p>Scope: ${escapeHtml(scope)}</p>
       <form method="post" action="/oauth/authorize">
         ${hiddenFields}

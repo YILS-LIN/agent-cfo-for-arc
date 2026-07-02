@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { AuthContext } from "@/lib/auth/types";
 import type { AppDatabase } from "@/lib/db/database";
+import { auditEvents, users, workspaceMembers, workspaces } from "@/lib/db/schema";
 import { createTestDatabase } from "@/lib/db/testing";
 import { OAuthAuthorizationService } from "@/lib/mcp/authorization-service";
 import { OAuthClientRegistrationService } from "@/lib/mcp/client-registration";
@@ -23,6 +24,19 @@ describe("OAuth authorization service", () => {
       role: "owner",
       identities: [{ type: "google", subject: "did:privy:user-1" }],
     };
+    await database.insert(users).values({
+      id: context.userId,
+      displayName: "OAuth User",
+      email: "oauth-user@example.com",
+    });
+    await database.insert(workspaces).values({
+      id: context.workspaceId,
+      ownerId: context.userId,
+      name: "OAuth Workspace",
+    });
+    await database
+      .insert(workspaceMembers)
+      .values({ workspaceId: context.workspaceId, userId: context.userId, role: "owner" });
   });
 
   afterEach(async () => {
@@ -61,6 +75,20 @@ describe("OAuth authorization service", () => {
     expect(result.redirectTo.searchParams.get("state")).toBe("client-state");
     expect(result.scope).toBe("wallets:read");
     expect(result.workspaceId).toBe(context.workspaceId);
+    await expect(database.select().from(auditEvents)).resolves.toMatchObject([
+      expect.objectContaining({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        action: "mcp.oauth.authorized",
+        entityType: "oauth_client",
+        entityId: client.client_id,
+        source: "web",
+        payload: expect.objectContaining({
+          scope: "wallets:read",
+          redirectUri: "http://127.0.0.1:6274/oauth/callback",
+        }),
+      }),
+    ]);
   });
 
   it("rejects requested scopes outside the registered client grant", async () => {

@@ -142,12 +142,12 @@ export class AuthService {
     return userId;
   }
 
-  async resolve(request: Request): Promise<AuthContext> {
+  async resolve(request: Request, workspaceId?: string): Promise<AuthContext> {
     const session = await this.provider.verifyWebSession(request);
     if (!session) throw new AuthenticationRequiredError("Authentication is required");
     const userId = await this.synchronizeIdentity(session);
 
-    const requestedWorkspaceId = readCookie(request, "agent-cfo-workspace");
+    const requestedWorkspaceId = workspaceId ?? readCookie(request, "agent-cfo-workspace");
     const memberships = await this.database
       .select()
       .from(workspaceMembers)
@@ -179,6 +179,22 @@ export class AuthService {
           address: identity.address,
         })),
     };
+  }
+
+  async listWorkspaces(request: Request) {
+    const session = await this.provider.verifyWebSession(request);
+    if (!session) throw new AuthenticationRequiredError("Authentication is required");
+    const userId = await this.synchronizeIdentity(session);
+    return this.database
+      .select({
+        workspaceId: workspaceMembers.workspaceId,
+        role: workspaceMembers.role,
+        name: workspaces.name,
+      })
+      .from(workspaceMembers)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+      .where(eq(workspaceMembers.userId, userId))
+      .orderBy(asc(workspaceMembers.joinedAt));
   }
 
   async requireRole(request: Request, roles: AuthContext["role"][]) {

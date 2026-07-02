@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import type { AuthContext } from "@/lib/auth/types";
 import type { AppDatabase } from "@/lib/db/database";
+import { AuditRepository } from "@/lib/db/repositories";
 import { oauthClients } from "@/lib/db/schema";
 import { OAuthInvalidGrantError, OAuthTokenService } from "@/lib/mcp/token-service";
 
@@ -52,6 +53,18 @@ export class OAuthAuthorizationService {
       privyUserId,
       workspaceId: context.workspaceId,
       scope,
+    });
+    await new AuditRepository(this.database).record(context, {
+      actorUserId: context.userId,
+      action: "mcp.oauth.authorized",
+      entityType: "oauth_client",
+      entityId: client.clientId,
+      source: "web",
+      payload: {
+        scope,
+        redirectUri: parsed.redirect_uri,
+        codeChallengeMethod: parsed.code_challenge_method,
+      },
     });
 
     const redirectTo = new URL(parsed.redirect_uri);
