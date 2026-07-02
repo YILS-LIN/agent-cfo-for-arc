@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getDatabase } from "@/lib/db/client";
+import { OAuthAuthorizationService } from "@/lib/mcp/authorization-service";
 import { OAuthClientRegistrationService } from "@/lib/mcp/client-registration";
 import { createMcpTokenVerifierFromEnvironment, McpOAuthService } from "@/lib/mcp/oauth";
 import { OAuthTokenService } from "@/lib/mcp/token-service";
@@ -8,6 +9,7 @@ import { OAuthTokenService } from "@/lib/mcp/token-service";
 let oauthService: McpOAuthService | undefined;
 let clientRegistrationService: OAuthClientRegistrationService | undefined;
 let tokenService: OAuthTokenService | undefined;
+let authorizationService: OAuthAuthorizationService | undefined;
 
 export function getMcpOAuthService() {
   oauthService ??= new McpOAuthService(
@@ -31,4 +33,9 @@ export function getOAuthTokenService() {
     signingJwk: process.env.MCP_OAUTH_SIGNING_JWK ?? "",
   });
   return tokenService;
+}
+
+export function getOAuthAuthorizationService() {
+  authorizationService ??= new OAuthAuthorizationService(getDatabase(), getOAuthTokenService());
+  return authorizationService;
 }
