@@ -18,17 +18,19 @@ import {
   RepositoryNotFoundError,
   RiskRepository,
   TaskRepository,
+  TransactionIntentRepository,
   WalletRepository,
 } from "@/lib/db/repositories";
 import type {
   CreateBudgetInput,
   CreateTaskInput,
+  CreateTransactionIntentInput,
   CreateWalletInput,
   IngestPaymentInput,
   UpdateBudgetInput,
   UpdateTaskStatusInput,
 } from "@/lib/db/validation";
-import { ingestPaymentInputSchema } from "@/lib/db/validation";
+import { createTransactionIntentInputSchema, ingestPaymentInputSchema } from "@/lib/db/validation";
 
 export class ApplicationPermissionError extends Error {}
 export class IdempotencyKeyRequiredError extends Error {}
@@ -137,6 +139,95 @@ export class WorkspaceApplicationService {
 
   listWallets(context: AuthContext) {
     return this.wallets.list(context);
+  }
+
+  async createTransactionIntent(
+    context: AuthContext,
+    input: CreateTransactionIntentInput,
+    idempotencyKey: string,
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    const key = normalizeIdempotencyKey(idempotencyKey);
+    const normalizedInput = createTransactionIntentInputSchema.parse(input);
+    const wallet = await this.wallets.getById(context, normalizedInput.walletId);
+    if (!wallet) throw new RepositoryNotFoundError("Workspace wallet not found");
+    if (wallet.archivedAt) throw new RepositoryNotFoundError("Active workspace wallet not found");
+    if (!wallet.capabilities.agentExecutable) {
+      throw new ApplicationPermissionError(
+        "Wallet does not have agent execution capability for transaction intents",
+      );
+    }
+    if (wallet.chainId !== normalizedInput.chainId) {
+      throw new ApplicationPermissionError("Transaction intent chain must match the wallet chain");
+    }
+    const budget = await this.budgets.getById(context, normalizedInput.budgetId);
+    if (!budget) throw new RepositoryNotFoundError("Workspace budget not found");
+    if (budget.status !== "active") {
+      throw new BudgetConflictError("Transaction intents require an active budget");
+    }
+    if (budget.walletId && budget.walletId !== wallet.id) {
+      throw new BudgetConflictError("Transaction intent budget does not cover this wallet");
+    }
+    if (budget.taskId && budget.taskId !== normalizedInput.taskId) {
+      throw new BudgetConflictError("Transaction intent budget does not cover this task");
+    }
+
+    const request = { ...normalizedInput, createdBy: mutationActor(context, source) };
+    const claim = await this.idempotency.claim(context, {
+      operation: "transaction_intent.create",
+      key,
+      request,
+    });
+    if (claim.state === "completed") {
+      const entityId = claim.record.response?.entityId;
+      if (typeof entityId !== "string") {
+        throw new RepositoryNotFoundError("Stored transaction intent response is invalid");
+      }
+      const intent = await new TransactionIntentRepository(this.database).getById(context, entityId);
+      if (!intent) throw new RepositoryNotFoundError("Stored transaction intent no longer exists");
+      return { intent, replayed: true } as const;
+    }
+    if (claim.state !== "claimed") {
+      throw new IdempotencyRequestUnresolvedError(
+        "A request with this idempotency key is still unresolved",
+      );
+    }
+
+    try {
+      const intent = await this.database.transaction(async (transaction) => {
+        const intents = new TransactionIntentRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const idempotency = new IdempotencyRepository(transaction);
+        const created = await intents.create(context, request);
+        await audits.record(context, {
+          actorUserId: mutationActor(context, source),
+          action: "transaction_intent.created",
+          entityType: "transaction_intent",
+          entityId: created.id,
+          source,
+          idempotencyKey: key,
+          payload: {
+            walletId: created.walletId,
+            budgetId: created.budgetId,
+            amount: created.amount,
+            status: created.status,
+          },
+        });
+        await idempotency.complete(context, {
+          id: claim.record.id,
+          response: { entityId: created.id },
+        });
+        return created;
+      });
+      return { intent, replayed: false } as const;
+    } catch (error) {
+      await this.idempotency.fail(context, {
+        id: claim.record.id,
+        errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+      });
+      throw error;
+    }
   }
 
   async getWallet(context: AuthContext, walletId: string) {

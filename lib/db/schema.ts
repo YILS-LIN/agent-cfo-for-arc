@@ -66,6 +66,14 @@ export const idempotencyStatusEnum = pgEnum("idempotency_status", [
 ]);
 export const riskSeverityEnum = pgEnum("risk_severity", ["low", "medium", "high"]);
 export const riskStatusEnum = pgEnum("risk_status", ["open", "investigating", "resolved"]);
+export const transactionIntentStatusEnum = pgEnum("transaction_intent_status", [
+  "pending_approval",
+  "approved",
+  "submitted",
+  "completed",
+  "failed",
+  "cancelled",
+]);
 export const reportStatusEnum = pgEnum("report_status", ["pending", "completed", "failed"]);
 export const providerPolicyDecisionEnum = pgEnum("provider_policy_decision", [
   "allowed",
@@ -353,6 +361,7 @@ export const budgets = pgTable(
   },
   (table) => [
     index("budget_workspace_period_idx").on(table.workspaceId, table.periodStart, table.periodEnd),
+    uniqueIndex("budget_workspace_id_unique").on(table.workspaceId, table.id),
     check("budget_amount_positive", sql`${table.amount} > 0`),
     check("budget_period_valid", sql`${table.periodEnd} > ${table.periodStart}`),
     check(
@@ -536,6 +545,57 @@ export const riskSignals = pgTable(
   ],
 );
 
+export const transactionIntents = pgTable(
+  "transaction_intents",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    walletId: uuid("wallet_id").notNull(),
+    budgetId: uuid("budget_id").notNull(),
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    chainId: integer("chain_id").notNull(),
+    recipientAddress: text("recipient_address").notNull(),
+    amount: numeric("amount", { precision: 38, scale: 6 }).notNull(),
+    currency: text("currency").notNull().default("USDC"),
+    reason: text("reason").notNull(),
+    status: transactionIntentStatusEnum("status").notNull().default("pending_approval"),
+    riskSnapshot: jsonb("risk_snapshot").$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    transactionHash: text("transaction_hash"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("transaction_intent_workspace_status_idx").on(table.workspaceId, table.status),
+    index("transaction_intent_wallet_created_idx").on(table.walletId, table.createdAt),
+    foreignKey({
+      name: "transaction_intent_workspace_wallet_fk",
+      columns: [table.workspaceId, table.walletId],
+      foreignColumns: [wallets.workspaceId, wallets.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "transaction_intent_workspace_budget_fk",
+      columns: [table.workspaceId, table.budgetId],
+      foreignColumns: [budgets.workspaceId, budgets.id],
+    }),
+    foreignKey({
+      name: "transaction_intent_workspace_task_fk",
+      columns: [table.workspaceId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.id],
+    }),
+    check("transaction_intent_amount_positive", sql`${table.amount} > 0`),
+    check("transaction_intent_currency_usdc", sql`${table.currency} = 'USDC'`),
+    check("transaction_intent_expiry_valid", sql`${table.expiresAt} > ${table.createdAt}`),
+  ],
+);
+
 export const reports = pgTable(
   "reports",
   {
@@ -688,6 +748,7 @@ export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
   budgetRevisions: many(budgetRevisions),
   analyses: many(analysisSnapshots),
   risks: many(riskSignals),
+  transactionIntents: many(transactionIntents),
   reports: many(reports),
 }));
 
@@ -695,6 +756,7 @@ export const walletsRelations = relations(wallets, ({ one, many }) => ({
   workspace: one(workspaces, { fields: [wallets.workspaceId], references: [workspaces.id] }),
   payments: many(paymentEvents),
   tasks: many(tasks),
+  transactionIntents: many(transactionIntents),
 }));
 
 export const paymentEventsRelations = relations(paymentEvents, ({ one }) => ({

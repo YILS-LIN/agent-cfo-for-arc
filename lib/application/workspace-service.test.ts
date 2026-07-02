@@ -16,6 +16,7 @@ import {
   OptimisticLockError,
   PaymentReplayConflictError,
   RepositoryNotFoundError,
+  WalletRepository,
   WorkspaceRepository,
 } from "@/lib/db/repositories";
 import {
@@ -112,6 +113,80 @@ describe("WorkspaceApplicationService", () => {
       IdempotencyKeyRequiredError,
     );
     await expect(database.select().from(wallets)).resolves.toHaveLength(0);
+  });
+
+  it("rejects transaction intents for wallets without execution capability", async () => {
+    const wallet = await service.createWallet(owner, walletInput(), "intent-wallet");
+
+    await expect(
+      service.createTransactionIntent(
+        owner,
+        {
+          walletId: wallet.wallet.id,
+          chainId: 5_042_002,
+          recipientAddress: "0x2222222222222222222222222222222222222222",
+          amount: "1",
+          budgetId: randomUUID(),
+          reason: "Pay x402 resource",
+          expiresAt: new Date("2026-07-03T00:10:00.000Z"),
+        },
+        "intent-request-1",
+      ),
+    ).rejects.toBeInstanceOf(ApplicationPermissionError);
+  });
+
+  it("creates audited pending transaction intents with budget and idempotency controls", async () => {
+    const wallet = await new WalletRepository(database).create(owner, {
+      ...walletInput(),
+      source: "circle_agent",
+      ownershipStatus: "managed",
+      capabilities: {
+        ...capabilities,
+        agentExecutable: true,
+        policyEnforceable: true,
+      },
+    });
+    const budget = await service.createBudget(
+      owner,
+      { ...budgetInput(), walletId: wallet.id },
+      "intent-budget",
+    );
+    const input = {
+      walletId: wallet.id,
+      chainId: 5_042_002,
+      recipientAddress: "0x2222222222222222222222222222222222222222",
+      amount: "1.25",
+      budgetId: budget.budget.id,
+      reason: "Pay x402 resource",
+      expiresAt: new Date("2026-07-03T00:10:00.000Z"),
+    };
+
+    const first = await service.createTransactionIntent(owner, input, "intent-request-2");
+    const replay = await service.createTransactionIntent(owner, input, "intent-request-2");
+
+    expect(first).toMatchObject({
+      replayed: false,
+      intent: { status: "pending_approval", budgetId: budget.budget.id },
+    });
+    expect(replay).toMatchObject({ replayed: true, intent: { id: first.intent.id } });
+    await expect(database.select().from(auditEvents)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "transaction_intent.created",
+          entityType: "transaction_intent",
+          idempotencyKey: "intent-request-2",
+        }),
+      ]),
+    );
+    await expect(database.select().from(idempotencyKeys)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "transaction_intent.create",
+          status: "completed",
+          response: { entityId: first.intent.id },
+        }),
+      ]),
+    );
   });
 
   it("derives wallet ownership capabilities from verified sign-in identities", async () => {

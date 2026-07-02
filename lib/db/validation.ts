@@ -94,6 +94,19 @@ export const ingestChainEventInputSchema = z.object({
   occurredAt: z.date(),
 });
 
+export const createTransactionIntentInputSchema = z.object({
+  walletId: z.string().uuid(),
+  budgetId: z.string().uuid(),
+  taskId: z.string().uuid().optional(),
+  chainId: z.number().int().positive(),
+  recipientAddress: evmAddress,
+  amount: usdcAmount,
+  reason: z.string().trim().min(1).max(500),
+  riskSnapshot: z.record(z.string(), z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  expiresAt: z.date(),
+});
+
 export const createBudgetInputSchema = z
   .object({
     walletId: z.string().uuid().optional(),
@@ -143,5 +156,6 @@ export type SetProviderPolicyInput = z.input<typeof setProviderPolicyInputSchema
 export type StoreAiCredentialInput = z.input<typeof storeAiCredentialInputSchema>;
 export type IngestPaymentInput = z.input<typeof ingestPaymentInputSchema>;
 export type IngestChainEventInput = z.input<typeof ingestChainEventInputSchema>;
+export type CreateTransactionIntentInput = z.input<typeof createTransactionIntentInputSchema>;
 export type CreateBudgetInput = z.input<typeof createBudgetInputSchema>;
 export type UpdateBudgetInput = z.input<typeof updateBudgetInputSchema>;

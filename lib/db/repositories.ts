@@ -19,6 +19,7 @@ import {
   reports,
   syncCursors,
   tasks,
+  transactionIntents,
   users,
   wallets,
   workspaceMembers,
@@ -30,6 +31,7 @@ import {
   createWalletInputSchema,
   ingestChainEventInputSchema,
   ingestPaymentInputSchema,
+  createTransactionIntentInputSchema,
   setProviderPolicyInputSchema,
   storeAiCredentialInputSchema,
   updateBudgetInputSchema,
@@ -40,6 +42,7 @@ import {
   type CreateWalletInput,
   type IngestChainEventInput,
   type IngestPaymentInput,
+  type CreateTransactionIntentInput,
   type SetProviderPolicyInput,
   type StoreAiCredentialInput,
   type UpdateTaskStatusInput,
@@ -453,6 +456,46 @@ export class TaskRepository {
       .returning();
     if (!task) throw new OptimisticLockError("Task was updated by another request or not found");
     return task;
+  }
+}
+
+export class TransactionIntentRepository {
+  constructor(private readonly database: AppDatabase) {}
+
+  async getById(scope: WorkspaceScope, intentId: string) {
+    const [intent] = await this.database
+      .select()
+      .from(transactionIntents)
+      .where(and(eq(transactionIntents.workspaceId, scope.workspaceId), eq(transactionIntents.id, intentId)))
+      .limit(1);
+    return intent ?? null;
+  }
+
+  async create(
+    scope: WorkspaceScope,
+    rawInput: CreateTransactionIntentInput & { createdBy?: string },
+  ) {
+    const input = createTransactionIntentInputSchema.parse(rawInput);
+    const [intent] = await this.database
+      .insert(transactionIntents)
+      .values({
+        id: randomUUID(),
+        workspaceId: scope.workspaceId,
+        walletId: input.walletId,
+        budgetId: input.budgetId,
+        taskId: input.taskId,
+        chainId: input.chainId,
+        recipientAddress: input.recipientAddress,
+        amount: input.amount,
+        reason: input.reason,
+        riskSnapshot: input.riskSnapshot,
+        metadata: input.metadata,
+        createdBy: rawInput.createdBy,
+        expiresAt: input.expiresAt,
+      })
+      .returning();
+    if (!intent) throw new Error("Transaction intent insert returned no row");
+    return intent;
   }
 }
 
