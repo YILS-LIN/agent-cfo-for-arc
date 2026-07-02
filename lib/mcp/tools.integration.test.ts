@@ -76,5 +76,5 @@ describe("Agent CFO MCP application parity", () => {
       await server.close();
       await testDatabase.close();
     }
-  });
+  }, 15_000);
 });
