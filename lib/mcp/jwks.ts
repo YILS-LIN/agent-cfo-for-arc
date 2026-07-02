@@ -37,11 +37,10 @@ const ecPrivateJwkSchema = z.object({
 
 const signingJwkSchema = z.union([rsaPrivateJwkSchema, ecPrivateJwkSchema]);
 
+export type McpOAuthSigningJwk = z.infer<typeof signingJwkSchema>;
 export type PublicJwks = { keys: PublicJwk[] };
 
-export async function buildPublicJwksFromSigningJwk(
-  value: string | undefined,
-): Promise<PublicJwks> {
+export function parseMcpOAuthSigningJwk(value: string | undefined): McpOAuthSigningJwk {
   if (!value) {
     throw new McpOAuthSigningKeyNotConfiguredError("MCP_OAUTH_SIGNING_JWK is required");
   }
@@ -58,8 +57,13 @@ export async function buildPublicJwksFromSigningJwk(
       "MCP OAuth signing JWK must be an RSA or P-256 private key",
     );
   }
+  return result.data;
+}
 
-  const jwk = result.data;
+export async function buildPublicJwksFromSigningJwk(
+  value: string | undefined,
+): Promise<PublicJwks> {
+  const jwk = parseMcpOAuthSigningJwk(value);
   if (jwk.kty === "RSA") {
     return {
       keys: [{ kty: jwk.kty, kid: jwk.kid, alg: jwk.alg, use: "sig", n: jwk.n, e: jwk.e }],

@@ -131,6 +131,28 @@ export const oauthClients = pgTable(
   (table) => [uniqueIndex("oauth_clients_client_id_unique").on(table.clientId)],
 );
 
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    id: uuid("id").primaryKey(),
+    codeHash: text("code_hash").notNull(),
+    clientId: text("client_id").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    codeChallengeMethod: text("code_challenge_method").notNull(),
+    privyUserId: text("privy_user_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    scope: text("scope").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("oauth_authorization_codes_hash_unique").on(table.codeHash),
+    index("oauth_authorization_codes_client_idx").on(table.clientId),
+  ],
+);
+
 export const workspaces = pgTable(
   "workspaces",
   {

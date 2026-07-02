@@ -40,6 +40,7 @@ import {
 import { RateLimitExceededError, RateLimitNotConfiguredError } from "@/lib/security/rate-limit";
 import { logError } from "@/lib/operations/logger";
 import { McpOAuthSigningKeyNotConfiguredError } from "@/lib/mcp/jwks";
+import { OAuthInvalidGrantError } from "@/lib/mcp/token-service";
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof InternalAuthenticationRequiredError) {
@@ -101,6 +102,9 @@ export function apiErrorResponse(error: unknown) {
       { error: error.message, code: "MCP_OAUTH_SIGNING_KEY_NOT_CONFIGURED" },
       { status: 503 },
     );
+  }
+  if (error instanceof OAuthInvalidGrantError) {
+    return NextResponse.json({ error: error.message, code: "INVALID_GRANT" }, { status: 400 });
   }
   if (error instanceof IdempotencyKeyRequiredError) {
     return NextResponse.json(

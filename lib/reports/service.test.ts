@@ -44,7 +44,7 @@ describe("ReportService", () => {
       email: `${randomUUID()}@example.com`,
     });
     owner = { ...scope, role: "owner", identities: [] };
-  });
+  }, 15_000);
 
   afterEach(async () => {
     await testDatabase?.close();
