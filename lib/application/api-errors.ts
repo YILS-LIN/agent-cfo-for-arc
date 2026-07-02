@@ -39,6 +39,7 @@ import {
 } from "@/lib/application/request-security";
 import { RateLimitExceededError, RateLimitNotConfiguredError } from "@/lib/security/rate-limit";
 import { logError } from "@/lib/operations/logger";
+import { McpOAuthSigningKeyNotConfiguredError } from "@/lib/mcp/jwks";
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof InternalAuthenticationRequiredError) {
@@ -92,6 +93,12 @@ export function apiErrorResponse(error: unknown) {
   if (error instanceof RateLimitNotConfiguredError) {
     return NextResponse.json(
       { error: "Rate limiting is not configured", code: "RATE_LIMIT_NOT_CONFIGURED" },
+      { status: 503 },
+    );
+  }
+  if (error instanceof McpOAuthSigningKeyNotConfiguredError) {
+    return NextResponse.json(
+      { error: error.message, code: "MCP_OAUTH_SIGNING_KEY_NOT_CONFIGURED" },
       { status: 503 },
     );
   }

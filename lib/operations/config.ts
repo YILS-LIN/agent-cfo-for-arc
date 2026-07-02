@@ -32,6 +32,7 @@ const environmentSchema = z
     MCP_OAUTH_ISSUER: httpsUrl,
     MCP_OAUTH_JWKS_URL: httpsUrl,
     MCP_OAUTH_AUDIENCE: httpsUrl,
+    MCP_OAUTH_SIGNING_JWK: z.string().min(1),
     MCP_ALLOWED_ORIGINS: z.string().min(1),
   })
   .superRefine((environment, context) => {

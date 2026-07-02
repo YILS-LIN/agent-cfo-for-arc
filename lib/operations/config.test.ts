@@ -21,6 +21,7 @@ function validEnvironment() {
     MCP_OAUTH_ISSUER: "https://auth.example.com",
     MCP_OAUTH_JWKS_URL: "https://auth.example.com/.well-known/jwks.json",
     MCP_OAUTH_AUDIENCE: "https://cfo.example.com/mcp",
+    MCP_OAUTH_SIGNING_JWK: '{"kty":"EC"}',
     MCP_ALLOWED_ORIGINS: "https://chatgpt.com,https://claude.ai",
   };
 }

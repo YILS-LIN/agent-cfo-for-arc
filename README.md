@@ -66,7 +66,7 @@ Copy `.env.example` to `.env.local` and configure:
 - A 32-byte base64 encryption key and key ID.
 - Privy app ID, app secret, and verification key.
 - HTTPS site and MCP URLs.
-- OAuth issuer, JWKS, audience, claims, and allowed MCP origins.
+- OAuth issuer, JWKS URL, signing JWK, audience, claims, and allowed MCP origins.
 - Arc RPC URL plus optional block-range, chunk-size, and concurrency tuning.
 
 Then apply migrations and start the app:
@@ -82,7 +82,7 @@ Standard PostgreSQL hostnames and IP endpoints use the `pg` driver by default. N
 
 ## Remote MCP
 
-The streamable HTTP endpoint is `/mcp`; protected-resource metadata is published under `/.well-known/oauth-protected-resource/mcp`. The authorization server must issue JWT access tokens with the configured audience, scopes, Privy subject claim, and workspace claim. Workspace membership is revalidated against PostgreSQL before a tool runs.
+The streamable HTTP endpoint is `/mcp`; protected-resource metadata is published under `/.well-known/oauth-protected-resource/mcp`. The app also hosts the OAuth authorization-server metadata and JWKS endpoint. Access tokens must use the configured audience, scopes, Privy subject claim, and workspace claim. Workspace membership is revalidated against PostgreSQL before a tool runs.
 
 Available scopes:
 

@@ -66,7 +66,7 @@ pnpm dev
 - 32 字节 base64 加密密钥及其 key ID。
 - Privy app ID、app secret 和 verification key。
 - HTTPS 站点地址与 MCP 地址。
-- OAuth issuer、JWKS、audience、claims 和 MCP 允许来源。
+- OAuth issuer、JWKS URL、签名 JWK、audience、claims 和 MCP 允许来源。
 - Arc RPC 地址，以及可选的区块范围、分块大小和并发调优参数。
 
 然后执行迁移并启动：
@@ -82,7 +82,7 @@ OpenAI 采用 BYOK：owner 或 editor 在设置页保存密钥。明文密钥会
 
 ## 远程 MCP
 
-Streamable HTTP 端点为 `/mcp`，受保护资源元数据位于 `/.well-known/oauth-protected-resource/mcp`。授权服务器签发的 JWT access token 必须包含已配置的 audience、scope、Privy subject claim 和 workspace claim。工具执行前还会重新查询 PostgreSQL 成员关系。
+Streamable HTTP 端点为 `/mcp`，受保护资源元数据位于 `/.well-known/oauth-protected-resource/mcp`。应用同时托管 OAuth 授权服务器 metadata 和 JWKS 端点。Access token 必须包含已配置的 audience、scope、Privy subject claim 和 workspace claim。工具执行前还会重新查询 PostgreSQL 成员关系。
 
 可用 scope：
 
