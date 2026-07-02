@@ -62,7 +62,7 @@ Open `http://localhost:3000`. No credentials or database are required for the pu
 
 Copy `.env.example` to `.env.local` and configure:
 
-- PostgreSQL `DATABASE_URL` and strong internal/rate-limit secrets.
+- PostgreSQL `DATABASE_URL`, optional `DATABASE_DRIVER`, and strong internal/rate-limit secrets.
 - A 32-byte base64 encryption key and key ID.
 - Privy app ID, app secret, and verification key.
 - HTTPS site and MCP URLs.
@@ -77,6 +77,8 @@ pnpm dev
 ```
 
 OpenAI remains BYOK: an owner or editor stores the key in Settings. Plaintext keys are encrypted before persistence and are never returned by metadata APIs.
+
+Standard PostgreSQL hostnames and IP endpoints use the `pg` driver by default. Neon endpoints ending in `.neon.tech` keep using the Neon serverless driver, and `DATABASE_DRIVER=postgres|neon` can override that detection when needed.
 
 ## Remote MCP
 

@@ -8,6 +8,7 @@ import {
 function validEnvironment() {
   return {
     DATABASE_URL: "postgresql://user:password@db.example.com/agent_cfo?sslmode=require",
+    DATABASE_DRIVER: "postgres",
     NEXT_PUBLIC_SITE_URL: "https://cfo.example.com",
     NEXT_PUBLIC_PRIVY_APP_ID: "privy-app",
     PRIVY_APP_SECRET: "privy-secret-at-least-twenty",

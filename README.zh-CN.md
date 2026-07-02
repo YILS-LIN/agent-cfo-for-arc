@@ -62,7 +62,7 @@ pnpm dev
 
 将 `.env.example` 复制为 `.env.local`，并配置：
 
-- PostgreSQL `DATABASE_URL` 和高强度内部/限流密钥。
+- PostgreSQL `DATABASE_URL`、可选 `DATABASE_DRIVER` 和高强度内部/限流密钥。
 - 32 字节 base64 加密密钥及其 key ID。
 - Privy app ID、app secret 和 verification key。
 - HTTPS 站点地址与 MCP 地址。
@@ -77,6 +77,8 @@ pnpm dev
 ```
 
 OpenAI 采用 BYOK：owner 或 editor 在设置页保存密钥。明文密钥会先加密再持久化，元数据 API 永远不会返回明文。
+
+普通 PostgreSQL 域名和 IP 端点默认使用 `pg` 驱动。以 `.neon.tech` 结尾的 Neon 端点继续使用 Neon serverless 驱动；必要时可通过 `DATABASE_DRIVER=postgres|neon` 显式覆盖自动判断。
 
 ## 远程 MCP
 

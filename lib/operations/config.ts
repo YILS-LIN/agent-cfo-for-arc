@@ -19,6 +19,7 @@ const environmentSchema = z
       .string()
       .url()
       .refine((value) => ["postgresql:", "postgres:"].includes(new URL(value).protocol)),
+    DATABASE_DRIVER: z.enum(["postgres", "neon"]).optional(),
     NEXT_PUBLIC_SITE_URL: httpsUrl,
     NEXT_PUBLIC_PRIVY_APP_ID: z.string().min(1),
     PRIVY_APP_SECRET: z.string().min(20),
