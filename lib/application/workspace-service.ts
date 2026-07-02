@@ -22,6 +22,7 @@ import {
   WalletRepository,
 } from "@/lib/db/repositories";
 import type {
+  ApproveTransactionIntentInput,
   CreateBudgetInput,
   CreateTaskInput,
   CreateTransactionIntentInput,
@@ -30,7 +31,11 @@ import type {
   UpdateBudgetInput,
   UpdateTaskStatusInput,
 } from "@/lib/db/validation";
-import { createTransactionIntentInputSchema, ingestPaymentInputSchema } from "@/lib/db/validation";
+import {
+  approveTransactionIntentInputSchema,
+  createTransactionIntentInputSchema,
+  ingestPaymentInputSchema,
+} from "@/lib/db/validation";
 
 export class ApplicationPermissionError extends Error {}
 export class IdempotencyKeyRequiredError extends Error {}
@@ -219,6 +224,70 @@ export class WorkspaceApplicationService {
           response: { entityId: created.id },
         });
         return created;
+      });
+      return { intent, replayed: false } as const;
+    } catch (error) {
+      await this.idempotency.fail(context, {
+        id: claim.record.id,
+        errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+      });
+      throw error;
+    }
+  }
+
+  async approveTransactionIntent(
+    context: AuthContext,
+    input: ApproveTransactionIntentInput,
+    idempotencyKey: string,
+    source: MutationSource = "web",
+  ) {
+    requireWriteRole(context);
+    const key = normalizeIdempotencyKey(idempotencyKey);
+    const normalizedInput = approveTransactionIntentInputSchema.parse(input);
+    const claim = await this.idempotency.claim(context, {
+      operation: "transaction_intent.approve",
+      key,
+      request: normalizedInput,
+    });
+    if (claim.state === "completed") {
+      const entityId = claim.record.response?.entityId;
+      if (typeof entityId !== "string") {
+        throw new RepositoryNotFoundError("Stored transaction intent response is invalid");
+      }
+      const intent = await new TransactionIntentRepository(this.database).getById(context, entityId);
+      if (!intent) throw new RepositoryNotFoundError("Stored transaction intent no longer exists");
+      return { intent, replayed: true } as const;
+    }
+    if (claim.state !== "claimed") {
+      throw new IdempotencyRequestUnresolvedError(
+        "A request with this idempotency key is still unresolved",
+      );
+    }
+
+    try {
+      const intent = await this.database.transaction(async (transaction) => {
+        const intents = new TransactionIntentRepository(transaction);
+        const audits = new AuditRepository(transaction);
+        const idempotency = new IdempotencyRepository(transaction);
+        const approved = await intents.approve(context, normalizedInput);
+        await audits.record(context, {
+          actorUserId: mutationActor(context, source),
+          action: "transaction_intent.approved",
+          entityType: "transaction_intent",
+          entityId: approved.id,
+          source,
+          idempotencyKey: key,
+          payload: {
+            walletId: approved.walletId,
+            budgetId: approved.budgetId,
+            status: approved.status,
+          },
+        });
+        await idempotency.complete(context, {
+          id: claim.record.id,
+          response: { entityId: approved.id },
+        });
+        return approved;
       });
       return { intent, replayed: false } as const;
     } catch (error) {

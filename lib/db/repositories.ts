@@ -32,6 +32,7 @@ import {
   ingestChainEventInputSchema,
   ingestPaymentInputSchema,
   createTransactionIntentInputSchema,
+  approveTransactionIntentInputSchema,
   setProviderPolicyInputSchema,
   storeAiCredentialInputSchema,
   updateBudgetInputSchema,
@@ -43,6 +44,7 @@ import {
   type IngestChainEventInput,
   type IngestPaymentInput,
   type CreateTransactionIntentInput,
+  type ApproveTransactionIntentInput,
   type SetProviderPolicyInput,
   type StoreAiCredentialInput,
   type UpdateTaskStatusInput,
@@ -495,6 +497,26 @@ export class TransactionIntentRepository {
       })
       .returning();
     if (!intent) throw new Error("Transaction intent insert returned no row");
+    return intent;
+  }
+
+  async approve(scope: WorkspaceScope, rawInput: ApproveTransactionIntentInput) {
+    const input = approveTransactionIntentInputSchema.parse(rawInput);
+    const now = new Date();
+    const [intent] = await this.database
+      .update(transactionIntents)
+      .set({ status: "approved", approvedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(transactionIntents.workspaceId, scope.workspaceId),
+          eq(transactionIntents.id, input.intentId),
+          eq(transactionIntents.status, "pending_approval"),
+        ),
+      )
+      .returning();
+    if (!intent) {
+      throw new OptimisticLockError("Transaction intent is not pending approval or not found");
+    }
     return intent;
   }
 }

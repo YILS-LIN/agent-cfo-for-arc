@@ -29,6 +29,7 @@ import {
   providerPolicies,
   riskSignals,
   tasks,
+  transactionIntents,
   wallets,
 } from "@/lib/db/schema";
 import { createTestDatabase } from "@/lib/db/testing";
@@ -184,6 +185,67 @@ describe("WorkspaceApplicationService", () => {
           operation: "transaction_intent.create",
           status: "completed",
           response: { entityId: first.intent.id },
+        }),
+      ]),
+    );
+  });
+
+  it("approves pending transaction intents with audit and idempotency controls", async () => {
+    const wallet = await new WalletRepository(database).create(owner, {
+      ...walletInput(),
+      source: "circle_agent",
+      ownershipStatus: "managed",
+      capabilities: {
+        ...capabilities,
+        agentExecutable: true,
+        policyEnforceable: true,
+      },
+    });
+    const budget = await service.createBudget(
+      owner,
+      { ...budgetInput(), walletId: wallet.id },
+      "approval-budget",
+    );
+    const created = await service.createTransactionIntent(
+      owner,
+      {
+        walletId: wallet.id,
+        chainId: 5_042_002,
+        recipientAddress: "0x2222222222222222222222222222222222222222",
+        amount: "1.25",
+        budgetId: budget.budget.id,
+        reason: "Approve x402 resource purchase",
+        expiresAt: new Date("2026-07-03T00:10:00.000Z"),
+      },
+      "approval-intent",
+    );
+
+    const first = await service.approveTransactionIntent(
+      owner,
+      { intentId: created.intent.id },
+      "approval-request",
+    );
+    const replay = await service.approveTransactionIntent(
+      owner,
+      { intentId: created.intent.id },
+      "approval-request",
+    );
+
+    expect(first).toMatchObject({
+      replayed: false,
+      intent: { id: created.intent.id, status: "approved" },
+    });
+    expect(first.intent.approvedAt).toBeInstanceOf(Date);
+    expect(replay).toMatchObject({ replayed: true, intent: { id: created.intent.id } });
+    await expect(database.select().from(transactionIntents)).resolves.toMatchObject([
+      expect.objectContaining({ id: created.intent.id, status: "approved" }),
+    ]);
+    await expect(database.select().from(auditEvents)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "transaction_intent.approved",
+          entityType: "transaction_intent",
+          idempotencyKey: "approval-request",
         }),
       ]),
     );
