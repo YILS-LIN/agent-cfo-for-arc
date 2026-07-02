@@ -115,6 +115,22 @@ export class McpOAuthService {
   }
 }
 
+type JwksResolver = Parameters<typeof jwtVerify>[1];
+
+export function createMcpTokenVerifier(input: {
+  issuer: string;
+  audience: string;
+  jwks: JwksResolver;
+}): TokenVerifier {
+  const issuer = input.issuer.replace(/\/$/, "");
+  return async (token) =>
+    jwtVerify(token, input.jwks, {
+      issuer,
+      audience: input.audience,
+      algorithms: ["RS256", "ES256"],
+    });
+}
+
 function requiredUrl(name: string) {
   const value = process.env[name];
   if (!value) throw new McpOAuthNotConfiguredError(`${name} is required`);
@@ -138,12 +154,7 @@ export function createMcpTokenVerifierFromEnvironment(): TokenVerifier {
   const jwks = createRemoteJWKSet(requiredUrl("MCP_OAUTH_JWKS_URL"));
   const audience = process.env.MCP_OAUTH_AUDIENCE;
   if (!audience) throw new McpOAuthNotConfiguredError("MCP_OAUTH_AUDIENCE is required");
-  return async (token) =>
-    jwtVerify(token, jwks, {
-      issuer,
-      audience,
-      algorithms: ["RS256", "ES256"],
-    });
+  return createMcpTokenVerifier({ issuer, audience, jwks });
 }
 
 export function mcpPublicUrl() {
