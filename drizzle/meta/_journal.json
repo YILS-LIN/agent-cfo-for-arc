@@ -71,6 +71,13 @@
       "when": 1782027595884,
       "tag": "0009_wooden_ser_duncan",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782961129584,
+      "tag": "0010_light_captain_midlands",
+      "breakpoints": true
     }
   ]
 }

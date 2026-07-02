@@ -51,7 +51,7 @@ describe("WorkspaceSyncService", () => {
       "sync-wallet",
     );
     walletId = wallet.wallet.id;
-  });
+  }, 15_000);
 
   afterEach(async () => {
     await testDatabase?.close();

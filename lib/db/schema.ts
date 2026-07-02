@@ -114,6 +114,23 @@ export const identityAccounts = pgTable(
   ],
 );
 
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: uuid("id").primaryKey(),
+    clientId: text("client_id").notNull(),
+    clientName: text("client_name"),
+    redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+    grantTypes: jsonb("grant_types").$type<string[]>().notNull(),
+    responseTypes: jsonb("response_types").$type<string[]>().notNull(),
+    tokenEndpointAuthMethod: text("token_endpoint_auth_method").notNull().default("none"),
+    scope: text("scope").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("oauth_clients_client_id_unique").on(table.clientId)],
+);
+
 export const workspaces = pgTable(
   "workspaces",
   {
