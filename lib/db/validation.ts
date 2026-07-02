@@ -5,6 +5,10 @@ const usdcAmount = z
   .string()
   .regex(/^(0|[1-9]\d*)(\.\d{1,6})?$/, "Invalid USDC amount")
   .refine((value) => Number(value) > 0, "USDC amount must be positive");
+const paymentSource = z.union([
+  z.enum(["arc", "circle_gateway", "x402", "demo"]),
+  z.literal("gateway").transform(() => "circle_gateway" as const),
+]);
 
 export const createWalletInputSchema = z.object({
   address: evmAddress,
@@ -70,7 +74,7 @@ export const ingestPaymentInputSchema = z.object({
   category: z.string().trim().max(120).optional(),
   resourceUri: z.string().trim().max(2_000).optional(),
   occurredAt: z.date(),
-  source: z.enum(["arc", "circle_gateway", "x402", "demo"]),
+  source: paymentSource,
   rawReference: z.string().trim().max(500).optional(),
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
