@@ -323,6 +323,83 @@ describe("WorkspaceApplicationService", () => {
     );
   });
 
+  it("marks submitted transaction intents completed with audit and idempotency controls", async () => {
+    const wallet = await new WalletRepository(database).create(owner, {
+      ...walletInput(),
+      source: "circle_agent",
+      ownershipStatus: "managed",
+      capabilities: {
+        ...capabilities,
+        agentExecutable: true,
+        policyEnforceable: true,
+      },
+    });
+    const budget = await service.createBudget(
+      owner,
+      { ...budgetInput(), walletId: wallet.id },
+      "complete-budget",
+    );
+    const created = await service.createTransactionIntent(
+      owner,
+      {
+        walletId: wallet.id,
+        chainId: 5_042_002,
+        recipientAddress: "0x2222222222222222222222222222222222222222",
+        amount: "1.25",
+        budgetId: budget.budget.id,
+        reason: "Complete x402 resource purchase",
+        expiresAt: new Date("2026-07-03T00:10:00.000Z"),
+      },
+      "complete-intent",
+    );
+    await service.approveTransactionIntent(
+      owner,
+      { intentId: created.intent.id },
+      "complete-approval",
+    );
+    await service.submitTransactionIntent(
+      owner,
+      { intentId: created.intent.id, transactionHash: `0x${"4".repeat(64)}` },
+      "complete-submit",
+      "system",
+    );
+
+    const first = await service.completeTransactionIntent(
+      owner,
+      { intentId: created.intent.id },
+      "complete-request",
+      "system",
+    );
+    const replay = await service.completeTransactionIntent(
+      owner,
+      { intentId: created.intent.id },
+      "complete-request",
+      "system",
+    );
+
+    expect(first).toMatchObject({
+      replayed: false,
+      intent: { id: created.intent.id, status: "completed" },
+    });
+    expect(first.intent.completedAt).toBeInstanceOf(Date);
+    expect(replay).toMatchObject({ replayed: true, intent: { id: created.intent.id } });
+    await expect(database.select().from(transactionIntents)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: created.intent.id, status: "completed" }),
+      ]),
+    );
+    await expect(database.select().from(auditEvents)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "transaction_intent.completed",
+          entityType: "transaction_intent",
+          source: "system",
+          idempotencyKey: "complete-request",
+        }),
+      ]),
+    );
+  });
+
   it("derives wallet ownership capabilities from verified sign-in identities", async () => {
     const claimed = await service.createWallet(
       owner,

@@ -34,6 +34,7 @@ import {
   createTransactionIntentInputSchema,
   approveTransactionIntentInputSchema,
   submitTransactionIntentInputSchema,
+  completeTransactionIntentInputSchema,
   setProviderPolicyInputSchema,
   storeAiCredentialInputSchema,
   updateBudgetInputSchema,
@@ -47,6 +48,7 @@ import {
   type CreateTransactionIntentInput,
   type ApproveTransactionIntentInput,
   type SubmitTransactionIntentInput,
+  type CompleteTransactionIntentInput,
   type SetProviderPolicyInput,
   type StoreAiCredentialInput,
   type UpdateTaskStatusInput,
@@ -543,6 +545,26 @@ export class TransactionIntentRepository {
       .returning();
     if (!intent) {
       throw new OptimisticLockError("Transaction intent is not approved or not found");
+    }
+    return intent;
+  }
+
+  async complete(scope: WorkspaceScope, rawInput: CompleteTransactionIntentInput) {
+    const input = completeTransactionIntentInputSchema.parse(rawInput);
+    const now = new Date();
+    const [intent] = await this.database
+      .update(transactionIntents)
+      .set({ status: "completed", completedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(transactionIntents.workspaceId, scope.workspaceId),
+          eq(transactionIntents.id, input.intentId),
+          eq(transactionIntents.status, "submitted"),
+        ),
+      )
+      .returning();
+    if (!intent) {
+      throw new OptimisticLockError("Transaction intent is not submitted or not found");
     }
     return intent;
   }
