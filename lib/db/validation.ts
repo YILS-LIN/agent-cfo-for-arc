@@ -111,6 +111,11 @@ export const approveTransactionIntentInputSchema = z.object({
   intentId: z.string().uuid(),
 });
 
+export const submitTransactionIntentInputSchema = z.object({
+  intentId: z.string().uuid(),
+  transactionHash: z.string().regex(/^0x[0-9a-f]{64}$/i),
+});
+
 export const createBudgetInputSchema = z
   .object({
     walletId: z.string().uuid().optional(),
@@ -162,5 +167,6 @@ export type IngestPaymentInput = z.input<typeof ingestPaymentInputSchema>;
 export type IngestChainEventInput = z.input<typeof ingestChainEventInputSchema>;
 export type CreateTransactionIntentInput = z.input<typeof createTransactionIntentInputSchema>;
 export type ApproveTransactionIntentInput = z.input<typeof approveTransactionIntentInputSchema>;
+export type SubmitTransactionIntentInput = z.input<typeof submitTransactionIntentInputSchema>;
 export type CreateBudgetInput = z.input<typeof createBudgetInputSchema>;
 export type UpdateBudgetInput = z.input<typeof updateBudgetInputSchema>;

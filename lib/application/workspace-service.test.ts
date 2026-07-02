@@ -251,6 +251,78 @@ describe("WorkspaceApplicationService", () => {
     );
   });
 
+  it("marks approved transaction intents submitted with an executor transaction hash", async () => {
+    const wallet = await new WalletRepository(database).create(owner, {
+      ...walletInput(),
+      source: "circle_agent",
+      ownershipStatus: "managed",
+      capabilities: {
+        ...capabilities,
+        agentExecutable: true,
+        policyEnforceable: true,
+      },
+    });
+    const budget = await service.createBudget(
+      owner,
+      { ...budgetInput(), walletId: wallet.id },
+      "submit-budget",
+    );
+    const created = await service.createTransactionIntent(
+      owner,
+      {
+        walletId: wallet.id,
+        chainId: 5_042_002,
+        recipientAddress: "0x2222222222222222222222222222222222222222",
+        amount: "1.25",
+        budgetId: budget.budget.id,
+        reason: "Submit x402 resource purchase",
+        expiresAt: new Date("2026-07-03T00:10:00.000Z"),
+      },
+      "submit-intent",
+    );
+    await service.approveTransactionIntent(
+      owner,
+      { intentId: created.intent.id },
+      "submit-approval",
+    );
+
+    const first = await service.submitTransactionIntent(
+      owner,
+      {
+        intentId: created.intent.id,
+        transactionHash: `0x${"3".repeat(64)}`,
+      },
+      "submit-request",
+      "system",
+    );
+    const replay = await service.submitTransactionIntent(
+      owner,
+      {
+        intentId: created.intent.id,
+        transactionHash: `0x${"3".repeat(64)}`,
+      },
+      "submit-request",
+      "system",
+    );
+
+    expect(first).toMatchObject({
+      replayed: false,
+      intent: { id: created.intent.id, status: "submitted", transactionHash: `0x${"3".repeat(64)}` },
+    });
+    expect(first.intent.submittedAt).toBeInstanceOf(Date);
+    expect(replay).toMatchObject({ replayed: true, intent: { id: created.intent.id } });
+    await expect(database.select().from(auditEvents)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "transaction_intent.submitted",
+          entityType: "transaction_intent",
+          source: "system",
+          idempotencyKey: "submit-request",
+        }),
+      ]),
+    );
+  });
+
   it("derives wallet ownership capabilities from verified sign-in identities", async () => {
     const claimed = await service.createWallet(
       owner,

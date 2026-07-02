@@ -33,6 +33,7 @@ import {
   ingestPaymentInputSchema,
   createTransactionIntentInputSchema,
   approveTransactionIntentInputSchema,
+  submitTransactionIntentInputSchema,
   setProviderPolicyInputSchema,
   storeAiCredentialInputSchema,
   updateBudgetInputSchema,
@@ -45,6 +46,7 @@ import {
   type IngestPaymentInput,
   type CreateTransactionIntentInput,
   type ApproveTransactionIntentInput,
+  type SubmitTransactionIntentInput,
   type SetProviderPolicyInput,
   type StoreAiCredentialInput,
   type UpdateTaskStatusInput,
@@ -516,6 +518,31 @@ export class TransactionIntentRepository {
       .returning();
     if (!intent) {
       throw new OptimisticLockError("Transaction intent is not pending approval or not found");
+    }
+    return intent;
+  }
+
+  async submit(scope: WorkspaceScope, rawInput: SubmitTransactionIntentInput) {
+    const input = submitTransactionIntentInputSchema.parse(rawInput);
+    const now = new Date();
+    const [intent] = await this.database
+      .update(transactionIntents)
+      .set({
+        status: "submitted",
+        transactionHash: input.transactionHash.toLowerCase(),
+        submittedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(transactionIntents.workspaceId, scope.workspaceId),
+          eq(transactionIntents.id, input.intentId),
+          eq(transactionIntents.status, "approved"),
+        ),
+      )
+      .returning();
+    if (!intent) {
+      throw new OptimisticLockError("Transaction intent is not approved or not found");
     }
     return intent;
   }
