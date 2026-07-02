@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWTPayload } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { WorkspaceRepository } from "@/lib/db/repositories";
@@ -108,6 +108,24 @@ describe("McpOAuthService", () => {
     await expect(service.resolve(request())).rejects.toBeInstanceOf(McpAuthorizationError);
   });
 
+  it("rejects revoked MCP access tokens before resolving workspace membership", async () => {
+    const service = new McpOAuthService(
+      testDatabase.database,
+      async () => ({
+        payload: {
+          jti: "revoked-token-id",
+          privy_user_id: "did:privy:alice",
+          workspace_id: workspaceId,
+          scope: "analytics:read",
+        },
+      }),
+      {
+        isTokenRevoked: async (payload: JWTPayload) => payload.jti === "revoked-token-id",
+      },
+    );
+
+    await expect(service.resolve(request())).rejects.toBeInstanceOf(McpAuthenticationRequiredError);
+  });
   it("does not expose token verification failures", async () => {
     const service = new McpOAuthService(testDatabase.database, async () => {
       throw new Error("signature details");

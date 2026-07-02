@@ -26,6 +26,13 @@ export type McpAuthContext = AuthContext & { scopes: ReadonlySet<string> };
 
 type VerifiedToken = { payload: JWTPayload };
 type TokenVerifier = (token: string) => Promise<VerifiedToken>;
+type TokenRevocationChecker = (payload: JWTPayload) => boolean | Promise<boolean>;
+
+export type McpOAuthServiceOptions = {
+  subjectClaim?: string;
+  workspaceClaim?: string;
+  isTokenRevoked?: TokenRevocationChecker;
+};
 
 function bearerToken(request: Request) {
   const authorization = request.headers.get("authorization") ?? "";
@@ -47,12 +54,24 @@ function tokenScopes(payload: JWTPayload) {
 }
 
 export class McpOAuthService {
+  private readonly subjectClaim: string;
+  private readonly workspaceClaim: string;
+  private readonly isTokenRevoked?: TokenRevocationChecker;
+
   constructor(
     private readonly database: AppDatabase,
     private readonly verifyToken: TokenVerifier,
-    private readonly subjectClaim = "privy_user_id",
-    private readonly workspaceClaim = "workspace_id",
-  ) {}
+    optionsOrSubjectClaim: McpOAuthServiceOptions | string = {},
+    legacyWorkspaceClaim = "workspace_id",
+  ) {
+    const options =
+      typeof optionsOrSubjectClaim === "string"
+        ? { subjectClaim: optionsOrSubjectClaim, workspaceClaim: legacyWorkspaceClaim }
+        : optionsOrSubjectClaim;
+    this.subjectClaim = options.subjectClaim ?? "privy_user_id";
+    this.workspaceClaim = options.workspaceClaim ?? "workspace_id";
+    this.isTokenRevoked = options.isTokenRevoked;
+  }
 
   async resolve(request: Request, requiredScopes?: string[]): Promise<McpAuthContext> {
     let verified: VerifiedToken;
@@ -60,6 +79,9 @@ export class McpOAuthService {
       verified = await this.verifyToken(bearerToken(request));
     } catch (error) {
       if (error instanceof McpAuthenticationRequiredError) throw error;
+      throw new McpAuthenticationRequiredError("OAuth bearer token is invalid or expired");
+    }
+    if (await this.isTokenRevoked?.(verified.payload)) {
       throw new McpAuthenticationRequiredError("OAuth bearer token is invalid or expired");
     }
     const scopes = tokenScopes(verified.payload);
